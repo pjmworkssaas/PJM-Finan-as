@@ -1,0 +1,15 @@
+{
+  "name": "PJM Finanças",
+  "short_name": "PJM Finanças",
+  "description": "Controle financeiro pessoal: entradas, contas, cartões, bancos e relatórios.",
+  "lang": "pt-BR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f5fa",
+  "theme_color": "#2456d6",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+  ]
+}
