@@ -644,14 +644,14 @@ function monthTotals(ym){
   });});
   return o;
 }
-function viewRel(){
-  var m=ui.month,t=monthTotals(m),mm=Number(m.slice(5)),pct=t.in?Math.round(t.out/t.in*100):0;
+function viewRelMes(){
+  var m=ui.month,pv=monthTotals(ymAdd(m,-1)),t=monthTotals(m),mm=Number(m.slice(5)),pct=t.in?Math.round(t.out/t.in*100):0;
   var h='<div class="sechead noprint"><h2 class="sec" style="margin-top:0">Relatórios</h2><div class="btnrow">'+
     '<button class="btn sm" onclick="app.relMon(-1)">◀</button><b>'+MESES[mm-1]+' '+m.slice(0,4)+'</b><button class="btn sm" onclick="app.relMon(1)">▶</button>'+
     '<button class="btn sm" onclick="window.print()">📄 Gerar PDF</button></div></div>';
   h+='<div class="card"><div class="kpis">'+
-    '<div class="kpi"><small>Entradas</small><b>'+brl(t.in)+'</b><small>recebido '+brl(t.inPaid)+'</small></div>'+
-    '<div class="kpi"><small>Saídas</small><b>'+brl(t.out)+'</b><small>pago '+brl(t.outPaid)+'</small></div>'+
+    '<div class="kpi"><small>Entradas</small><b>'+brl(t.in)+'</b><small>recebido '+brl(t.inPaid)+'</small><small>'+dlt(t.in,pv.in,true)+' vs mês anterior</small></div>'+
+    '<div class="kpi"><small>Saídas</small><b>'+brl(t.out)+'</b><small>pago '+brl(t.outPaid)+'</small><small>'+dlt(t.out,pv.out,false)+' vs mês anterior</small></div>'+
     '<div class="kpi"><small>Saldo do mês</small><b style="color:var(--'+(t.in-t.out<0?'red':'green')+')">'+brl(t.in-t.out)+'</b></div>'+
     '<div class="kpi"><small>Renda comprometida</small><b style="color:var(--'+(pct>80?'red':pct>60?'orange':'green')+')">'+pct+'%</b></div></div></div>';
   var cats=Object.keys(t.cat).sort(function(a,b){return t.cat[b]-t.cat[a];}),mx=cats.length?t.cat[cats[0]]:1;
@@ -665,6 +665,55 @@ function viewRel(){
   h+='<div class="card"><h3 style="margin-top:0">Entradas × Saídas (3 meses atrás a 2 à frente)</h3><svg viewBox="0 0 360 152" style="width:100%;max-width:520px">'+svg+'</svg>'+
     '<p class="small muted" style="margin:6px 0 0"><span style="color:var(--green)">■</span> Entradas &nbsp;<span style="color:var(--red)">■</span> Saídas</p></div>';
   return h;
+}
+
+/* ---------- relatório anual e comparativos ---------- */
+var relMode='mes',relYear=Number(todayISO().slice(0,4));
+function dlt(cur,prev,goodUp){
+  if(!prev)return cur?'<span class="muted">sem base de comparação</span>':'<span class="muted">—</span>';
+  var p=Math.round((cur-prev)/prev*100);if(p===0)return '<span class="muted">= igual</span>';
+  var good=(p>0)===goodUp;return '<span style="color:var(--'+(good?'green':'red')+')">'+(p>0?'▲ ':'▼ ')+Math.abs(p)+'%</span>';
+}
+function yearData(y){
+  var months=[],cat={},i;for(i=0;i<12;i++)months.push({in:0,out:0});
+  var up=y+'-12-31';
+  ['in','out'].forEach(function(k){buildOcc(k,up).forEach(function(x){
+    if(x.date.slice(0,4)!==String(y))return;
+    var v=Number(x.rec?x.rec.valor:x.item.valor),mi=Number(x.date.slice(5,7))-1;months[mi][k]+=v;
+    if(k==='out'){var c=x.item.categoria;cat[c]=(cat[c]||0)+v;}
+  });});
+  var tin=0,tout=0;months.forEach(function(m){tin+=m.in;tout+=m.out;});
+  return {months:months,cat:cat,in:tin,out:tout};
+}
+function relAno(){
+  var y=relYear,d=yearData(y),pv=yearData(y-1),nowM=y===Number(todayISO().slice(0,4))?Number(todayISO().slice(5,7)):12;
+  var h='<div class="sechead noprint"><h2 class="sec" style="margin-top:0">Relatório anual</h2><div class="btnrow">'+
+    '<button class="btn sm" onclick="app.relYr(-1)">◀</button><b>'+y+'</b><button class="btn sm" onclick="app.relYr(1)">▶</button>'+
+    '<button class="btn sm" onclick="window.print()">📄 Gerar PDF</button></div></div>';
+  var sal=d.in-d.out,psal=pv.in-pv.out;
+  h+='<div class="card"><div class="kpis">'+
+    '<div class="kpi"><small>Entradas no ano</small><b>'+brl(d.in)+'</b><small>'+dlt(d.in,pv.in,true)+' vs '+(y-1)+'</small></div>'+
+    '<div class="kpi"><small>Saídas no ano</small><b>'+brl(d.out)+'</b><small>'+dlt(d.out,pv.out,false)+' vs '+(y-1)+'</small></div>'+
+    '<div class="kpi"><small>Saldo do ano</small><b style="color:var(--'+(sal<0?'red':'green')+')">'+brl(sal)+'</b><small>'+(pv.in||pv.out?(y-1)+': '+brl(psal):'sem '+(y-1))+'</small></div>'+
+    '<div class="kpi"><small>Média mensal de saídas</small><b>'+brl(d.out/nowM)+'</b><small>'+(y===Number(todayISO().slice(0,4))?'até o mês atual':'12 meses')+'</small></div></div></div>';
+  var top=Math.max.apply(null,d.months.map(function(m){return Math.max(m.in,m.out);}).concat([1])),svg='';
+  d.months.forEach(function(m,i){var a=m.in/top*120,b=m.out/top*120,X=i*31+4;
+    svg+='<rect x="'+X+'" y="'+(130-a)+'" width="12" height="'+a+'" rx="2" fill="var(--green)"/><rect x="'+(X+13)+'" y="'+(130-b)+'" width="12" height="'+b+'" rx="2" fill="var(--red)"/>'+
+      '<text x="'+(X+13)+'" y="146" font-size="9" text-anchor="middle" fill="var(--muted)">'+MES3[i]+'</text>';});
+  h+='<div class="card"><h3 style="margin-top:0">Entradas × Saídas por mês</h3><svg viewBox="0 0 376 152" style="width:100%;max-width:620px">'+svg+'</svg>'+
+    '<p class="small muted" style="margin:6px 0 0"><span style="color:var(--green)">■</span> Entradas &nbsp;<span style="color:var(--red)">■</span> Saídas</p></div>';
+  var rows=d.months.map(function(m,i){var sl=m.in-m.out,pm=i?d.months[i-1].out:null;
+    return '<tr><td>'+MESES[i]+'</td><td>'+brl(m.in)+'</td><td>'+brl(m.out)+'</td><td style="color:var(--'+(sl<0?'red':'green')+')">'+brl(sl)+'</td><td>'+(pm===null?'—':dlt(m.out,pm,false))+'</td></tr>';}).join('');
+  h+='<div class="card"><h3 style="margin-top:0">Mês a mês</h3><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap"><thead><tr style="text-align:left;color:var(--muted)"><th>Mês</th><th>Entradas</th><th>Saídas</th><th>Saldo</th><th>Saídas vs mês ant.</th></tr></thead><tbody>'+rows+
+    '<tr style="font-weight:700;border-top:1px solid var(--border)"><td>Total</td><td>'+brl(d.in)+'</td><td>'+brl(d.out)+'</td><td>'+brl(sal)+'</td><td></td></tr></tbody></table></div></div>';
+  var cats=Object.keys(d.cat).sort(function(a,b){return d.cat[b]-d.cat[a];}),mx=cats.length?d.cat[cats[0]]:1;
+  h+='<div class="card"><h3 style="margin-top:0">Despesas por categoria no ano</h3><div class="rbars">'+(cats.length?cats.map(function(c){
+    return '<div class="rb"><span>'+esc(BILL_CATS[c]||c)+'</span><span><i style="width:'+Math.max(3,d.cat[c]/mx*100)+'%"></i></span><b>'+brl(d.cat[c])+'<br><span class="small">'+dlt(d.cat[c],pv.cat[c]||0,false)+'</span></b></div>';}).join(''):'<p class="muted">Sem despesas neste ano.</p>')+'</div></div>';
+  return h;
+}
+function viewRel(){
+  var bar='<div class="btnrow noprint" style="margin-bottom:10px"><button class="btn sm'+(relMode==='mes'?' primary':'')+'" onclick="app.relMode(\'mes\')">Mensal</button><button class="btn sm'+(relMode==='ano'?' primary':'')+'" onclick="app.relMode(\'ano\')">Anual</button></div>';
+  return bar+(relMode==='ano'?relAno():viewRelMes());
 }
 function exportForDB(){
   var tables={};Object.keys(db).forEach(function(k){if(Array.isArray(db[k]))tables[k]=db[k];});
@@ -1595,6 +1644,7 @@ window.app={
   calcTab:function(t){ui.calcTab=t;render();},
   newSavings:function(){svForm();},svEdit:function(id){svForm(id);},svMove:svMoveModal,svDel:svDelete,svDelTx:svDeleteTx,
   svToggle:function(id){ui.svExpanded[id]=!ui.svExpanded[id];render();},
+  relMode:function(m){relMode=m;render();},relYr:function(n){relYear+=n;render();},
   relMon:function(n){ui.month=ymAdd(ui.month,n);render();},
   newAcc:function(){acForm();},acMove:acMove,acDel:acDelete,
   newCard:function(){cdForm();},cdBuy:cdBuy,cdEditCard:function(i){cdForm(i);},acRename:acRename,quick:quickExpense,cdPay:cdPay,cdUnpay:cdUnpay,cdDelTx:cdDelTx,cdDelCard:cdDelCard,cdMon:function(n){cdMonth=ymAdd(cdMonth,n);render();},
