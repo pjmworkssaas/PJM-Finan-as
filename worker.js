@@ -1,6 +1,6 @@
 /* Fine Gestor — servidor do checkout (Cloudflare Worker) — API de Orders do Mercado Pago
    Variáveis em Settings → Variables and Secrets:
-   MP_ACCESS_TOKEN (secret) · PRICE (ex.: 59.90) · ALLOWED_ORIGIN (ex.: https://seuusuario.github.io) · NTFY_TOPIC (nome longo e secreto)
+   MP_ACCESS_TOKEN (secret) · PRICE (ex.: 59.90) · ALLOWED_ORIGIN (ex.: https://seuusuario.github.io) · TG_TOKEN (secret) e TG_CHAT para o alerta pelo Telegram (ou NTFY_TOPIC como alternativa)
    Opcional: um KV chamado SEEN, para não repetir o aviso da mesma venda.
    No painel do Mercado Pago: Webhooks → Configurar notificações → URL = https://SEU-WORKER/webhook, evento "Order (Mercado Pago)". */
 const ORDER = /^ORD[0-9A-Za-z]+$/;
@@ -72,12 +72,36 @@ export default {
 };
 
 async function notify(id, env, mp) {
-  const d = await (await mp('/v1/orders/' + id)).json();
-  if (d.status !== 'processed') return;
+  try { await notifyInner(id, env, mp); } catch (e) { console.log('ERRO no aviso:', e && e.message ? e.message : String(e)); }
+}
+
+async function notifyInner(id, env, mp) {
+  const tgToken = String(env.TG_TOKEN || '').trim(), tgChat = String(env.TG_CHAT || '').trim(), topic = String(env.NTFY_TOPIC || '').trim();
+  if (!(tgToken && tgChat) && !topic) { console.log('ERRO: nenhum canal de alerta configurado (TG_TOKEN e TG_CHAT, ou NTFY_TOPIC)'); return; }
+  const r = await mp('/v1/orders/' + id);
+  const d = await r.json();
+  const pay0 = (((d.transactions || {}).payments || [])[0]) || {};
+  console.log('webhook', id, 'GET order HTTP', r.status, 'status', d.status, 'pagamento', pay0.status);
+  const paid = d.status === 'processed' || pay0.status === 'processed' || d.status_detail === 'accredited';
+  if (!paid) return;
   if (env.SEEN) { if (await env.SEEN.get(id)) return; await env.SEEN.put(id, '1', { expirationTtl: 60 * 60 * 24 * 90 }); }
-  const pm = (((d.transactions || {}).payments || [])[0] || {}).payment_method || {};
+  const pm = pay0.payment_method || {};
   const who = String(d.description || '').split(' | ').slice(1);
   const msg = 'Nome: ' + (who[0] || '-') + '\nE-mail: ' + (who[1] || '-') + '\nWhatsApp: ' + (who[2] || '-') +
     '\nValor: R$ ' + d.total_amount + '\nForma: ' + (pm.id || '-') + '\nPedido: ' + d.id + '\n\nGere a chave e envie ao cliente.';
-  await fetch('https://ntfy.sh/' + env.NTFY_TOPIC, { method: 'POST', headers: { Title: 'Venda aprovada - Fine Gestor', Tags: 'moneybag' }, body: msg });
+  console.log('enviando alerta · telegram:', !!(tgToken && tgChat), '· ntfy:', !!topic);
+  if (tgToken && tgChat) {
+    try {
+      const t = await fetch('https://api.telegram.org/bot' + tgToken + '/sendMessage', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: tgChat, text: '💰 Venda aprovada - Fine Gestor\n\n' + msg }),
+      });
+      console.log('telegram HTTP', t.status, t.ok ? '' : (await t.text()).slice(0, 200));
+      if (t.ok) return;
+    } catch (e) { console.log('ERRO telegram:', e && e.message ? e.message : String(e)); }
+  }
+  if (topic) {
+    const n = await fetch('https://ntfy.sh/' + topic, { method: 'POST', headers: { Title: 'Venda aprovada - Fine Gestor', Tags: 'moneybag' }, body: msg });
+    console.log('ntfy HTTP', n.status);
+  }
 }
