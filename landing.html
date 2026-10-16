@@ -77,9 +77,9 @@ footer{border-top:1px solid var(--bd);padding:28px 0;color:var(--mut);font-size:
 </div></section>
 
 <section id="comprar"><div class="w">
-  <h2>Um pagamento, acesso ao programa</h2><p class="sub">Sem mensalidade escondida.</p>
+  <h2>Tenha imediatamnete, acesso ao programa</h2><p class="sub">Sem mensalidade escondida.</p>
   <div class="c price">
-    <div style="color:var(--mut)">Fine Gestor</div><div class="v" id="price">R$ 00,00</div>
+    <div style="color:var(--mut)">Fine Gestor</div><div class="v" id="price">R$ 59,90</div>
     <ul><li>Todos os recursos do programa</li><li>Computador e celular</li><li>Funciona offline</li><li>Suporte pelo próprio programa</li></ul>
     <a class="btn" style="width:100%" href="#" data-buy>Comprar agora</a>
     <div class="pay"><span>Pix</span><span>Cartão de crédito</span><span>Cartão de débito</span><span>Boleto</span></div>
@@ -87,7 +87,7 @@ footer{border-top:1px solid var(--bd);padding:28px 0;color:var(--mut);font-size:
 </div></section>
 
 <section id="paguei"><div class="w">
-  <h2>Já pagou? Peça sua chave</h2><p class="sub">Preencha e envie para o nosso WhatsApp. Respondemos assim que o pagamento for confirmado.</p>
+  <h2>Já pagou? Peça sua chave única de acesso</h2><p class="sub">Preencha e envie para o nosso WhatsApp. Respondemos assim que o pagamento for confirmado.</p>
   <div class="c" style="max-width:480px;margin:0 auto"><form id="paid">
     <label for="n">Seu nome</label><input id="n" required>
     <label for="e">E-mail usado na compra</label><input id="e" type="email" required>
@@ -119,8 +119,8 @@ footer{border-top:1px solid var(--bd);padding:28px 0;color:var(--mut);font-size:
 <script>
 /* ===== CONFIGURE AQUI ===== */
 var CONFIG={
-  preco:'R$ 00,00',                       /* texto do preço exibido */
-  linkPagamento:'COLE_AQUI_O_LINK_DO_MERCADO_PAGO', /* link de pagamento / checkout do Mercado Pago */
+  preco:'R$ 59,90',                       /* texto do preço exibido */
+  linkPagamento:'checkout.html',          /* página de pagamento do Fine Gestor */
   whatsapp:'55DDDNUMERO',                 /* seu WhatsApp com 55 + DDD, só números */
   app:'index.html'                        /* endereço do programa */
 };
@@ -129,10 +129,8 @@ document.getElementById('price').textContent=CONFIG.preco;
 document.getElementById('open').href=CONFIG.app;
 document.getElementById('y').textContent=new Date().getFullYear();
 document.querySelectorAll('[data-buy]').forEach(function(a){
-  a.addEventListener('click',function(ev){
-    if(/^https?:/.test(CONFIG.linkPagamento)){a.href=CONFIG.linkPagamento;return;}
-    if(a.getAttribute('href')==='#'){ev.preventDefault();alert('O link de pagamento ainda não foi configurado.');}
-  });
+  if(CONFIG.linkPagamento&&CONFIG.linkPagamento.indexOf('COLE')!==0){a.href=CONFIG.linkPagamento;}
+  else{a.addEventListener('click',function(ev){ev.preventDefault();alert('O link de pagamento ainda não foi configurado.');});}
 });
 document.getElementById('paid').addEventListener('submit',function(ev){
   ev.preventDefault();
