@@ -271,7 +271,7 @@ function load(){
     if(raw){var d=JSON.parse(raw);var b=defaults();db=Object.assign(b,d);db.settings=Object.assign(defaults().settings,d.settings||{});db.budgets=Object.assign(defaults().budgets,d.budgets||{});}
   }catch(e){storageOK=false;}
 }
-function save(){try{localStorage.setItem(KEY,JSON.stringify(db));storageOK=true;}catch(e){storageOK=false;}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(db));storageOK=true;}catch(e){storageOK=false;}try{cloudDirty();}catch(e){}}
 
 function listOf(k){return k==='in'?db.incomes:db.bills;}
 function recsOf(k){return k==='in'?db.receipts:db.payments;}
@@ -1387,9 +1387,9 @@ function gShow(html){$('#gate').innerHTML=html;$('#gate').classList.remove('hidd
 function gHide(){$('#gate').classList.add('hidden');$('#shell').style.display='';}
 function renderActivation(err){
   gShow('<div class="gcard"><img src="'+LOGO_DATA+'" alt="Fine Gestor"><h2>Ativar o Fine Gestor</h2><p class="gsub">Informe a chave de ativação que você recebeu após a compra.</p>'+
-    '<div class="fld"><input id="g_key" placeholder="PJM-XXXX-XXXX-XX" style="text-transform:uppercase;letter-spacing:1px;text-align:center"></div>'+
+    '<div class="fld"><input id="g_key" placeholder="'+(cloudOn()?'FG-XXXX-XXXX-XXXX':'PJM-XXXX-XXXX-XX')+'" style="text-transform:uppercase;letter-spacing:1px;text-align:center"></div>'+
     '<div class="gerr">'+(err||'')+'</div>'+
-    '<button class="btn primary" onclick="app.tryActivate()">Ativar</button></div>');
+    '<button class="btn primary" onclick="app.tryActivate()">Ativar</button>'+(cloudOn()&&cSession()?'<button class="glink" onclick="app.cSignOut()">Sair da conta ('+esc(cSession().user.email)+')</button>':'')+'</div>');
   var inp=$('#g_key');if(inp){inp.focus();inp.addEventListener('keydown',function(e){if(e.key==='Enter')app.tryActivate();});}
 }
 function renderSetPin(){
@@ -1408,6 +1408,7 @@ function renderLock(err){
 }
 function boot(){
   var lg=$('#brandLogo');if(lg)lg.src=LOGO_DATA;
+  if(cloudOn()){cloudBoot();return;}
   if(!db.settings.activated){renderActivation();return;}
   if(db.settings.pinHash){renderLock();return;}
   startApp();
@@ -1568,7 +1569,8 @@ function loadSample(){
 function settingsModal(){
   var s=db.settings;var canN='Notification' in window;
   var body='<div class="err" id="ferr"></div>'+
-    '<div class="setblock"><h4>🔑 Licença e acesso</h4><p class="small muted" style="margin-top:0">Chave ativada: <span class="mono">'+esc(s.licenseKey||'—')+'</span></p>'+
+    (cloudOn()&&cSession()?'<div class="setblock"><h4>☁️ Conta e nuvem</h4><p class="small muted" style="margin-top:0">Conta: <b>'+esc(cSession().user.email)+'</b><br>Sincronização: '+syncLabel()+'</p><div class="btnrow"><button class="btn" id="b_sync">Sincronizar agora</button><button class="btn" id="b_out">Sair da conta</button></div></div>':'')+
+    '<div class="setblock"><h4>🔑 Licença e acesso</h4><p class="small muted" style="margin-top:0">'+(cloudOn()?'Licença: <b>ativa</b>':'Chave ativada: <span class="mono">'+esc(s.licenseKey||'—')+'</span>')+'</p>'+
     fld('Senha de acesso','<input id="s_pin" type="password" placeholder="'+(s.pinHash?'Deixe em branco para manter a atual':'Nenhuma definida — opcional')+'">','Deixe em branco para não alterar. Para remover, digite REMOVER.')+'</div>'+
     '<div class="setblock"><h4>🔔 Alertas e aparência</h4><div class="setgrid">'+
     fld('Avisar com (dias de antecedência)','<input id="s_days" type="number" min="0" max="60" value="'+s.alertDays+'">')+
@@ -1601,6 +1603,7 @@ function settingsModal(){
     $('#b_json',root).addEventListener('click',exportJSON);
     $('#b_csv',root).addEventListener('click',exportCSV);
     $('#b_ics',root).addEventListener('click',exportICS);$('#b_db',root).addEventListener('click',exportForDB);$('#b_tut',root).addEventListener('click',function(){closeModal();onboard();});$('#b_terms',root).addEventListener('click',function(){legalModal('t');});$('#b_priv',root).addEventListener('click',function(){legalModal('p');});
+    if($('#b_sync',root)){$('#b_sync',root).addEventListener('click',function(){cSyncNow(this);});$('#b_out',root).addEventListener('click',function(){closeModal();cSignOut();});}
     $('#b_stmt',root).addEventListener('click',function(){closeModal();importStatementModal();});
     $('#b_sample',root).addEventListener('click',function(){closeModal();loadSample();});
     $('#b_clear',root).addEventListener('click',function(){
@@ -1617,10 +1620,200 @@ function settingsModal(){
   });
 }
 
+/* ---------- conta, licença e nuvem (Supabase) ---------- */
+var CLOUD={url:'https://iqwykbjsidflmidbgvhz.supabase.co',key:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlxd3lrYmpzaWRmbG1pZGJndmh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIyODk1MTQsImV4cCI6MjEwNzg2NTUxNH0.ENrz830ejmAfGzrXL5F91QADixFbvx_dnEGc9upMTqM'};
+function cloudOn(){return /^https:\/\//.test(CLOUD.url)&&CLOUD.key.indexOf('COLE')!==0;}
+var AUTH_K='fg-auth',LIC_K='fg-lic',SYNC_K='fg-sync',cloudApplying=false,pushTimer=null,chg=0,lastEmail='';
+function lsGet(k){try{return JSON.parse(localStorage.getItem(k)||'null');}catch(e){return null;}}
+function lsSet(k,v){try{if(v===null)localStorage.removeItem(k);else localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+function cReq(path,opt,tok){
+  opt=opt||{};var h=Object.assign({'apikey':CLOUD.key,'Content-Type':'application/json'},opt.headers||{});
+  h.Authorization='Bearer '+(tok||CLOUD.key);
+  return fetch(CLOUD.url+path,{method:opt.method||'GET',headers:h,body:opt.body}).then(function(r){
+    return r.text().then(function(t){var j=null;try{j=t?JSON.parse(t):null;}catch(e){}return {ok:r.ok,status:r.status,json:j};});
+  });
+}
+function saveSession(j){
+  if(!j||!j.access_token||!j.user)return null;
+  var s={access_token:j.access_token,refresh_token:j.refresh_token,expires_at:Date.now()+((j.expires_in||3600)-60)*1000,user:{id:j.user.id,email:j.user.email}};
+  lsSet(AUTH_K,s);return s;
+}
+function cSession(){return lsGet(AUTH_K);}
+function cToken(){
+  var s=cSession();if(!s)return Promise.reject('nosession');
+  if(Date.now()<s.expires_at)return Promise.resolve(s.access_token);
+  return cReq('/auth/v1/token?grant_type=refresh_token',{method:'POST',body:JSON.stringify({refresh_token:s.refresh_token})}).then(function(r){
+    if(r.ok&&r.json&&r.json.access_token)return saveSession(r.json).access_token;
+    if(r.status===400||r.status===401)lsSet(AUTH_K,null);
+    return Promise.reject('refresh');
+  });
+}
+function cErrMsg(r){
+  var j=r.json||{},m=String(j.error_description||j.msg||j.message||j.error||'').toLowerCase();
+  if(m.indexOf('invalid login')>=0||m.indexOf('invalid_credentials')>=0)return 'E-mail ou senha incorretos.';
+  if(m.indexOf('already')>=0)return 'Este e-mail já tem conta. Use “Entrar”.';
+  if(m.indexOf('not confirmed')>=0)return 'Confirme seu e-mail antes de entrar (veja a caixa de entrada e o spam).';
+  if(m.indexOf('at least')>=0||m.indexOf('weak')>=0)return 'A senha precisa ter pelo menos 6 caracteres.';
+  if(m.indexOf('rate')>=0||r.status===429)return 'Muitas tentativas. Aguarde alguns minutos.';
+  return 'Não foi possível concluir. Tente novamente.';
+}
+function cLicCheck(){
+  return cToken().then(function(t){return cReq('/rest/v1/licenses?select=status&status=eq.ativa&limit=1',{},t);}).then(function(r){
+    if(!r.ok)return Promise.reject('net');
+    var ok=!!(r.json&&r.json.length);lsSet(LIC_K,ok?{uid:cSession().user.id,at:Date.now()}:null);return ok;
+  });
+}
+function cActivate(k){
+  return cToken().then(function(t){return cReq('/rest/v1/rpc/activate_license',{method:'POST',body:JSON.stringify({p_key:k})},t);}).then(function(r){return r.ok?r.json:'erro';});
+}
+
+/* gate: telas de login, nova senha e sem conexão */
+function gCard(h2,sub,inner){return '<div class="gcard"><img src="'+LOGO_DATA+'" alt="Fine Gestor"><h2>'+h2+'</h2><p class="gsub">'+sub+'</p>'+inner+'</div>';}
+function renderLogin(mode,err,info){
+  var su=mode==='signup';
+  gShow(gCard(su?'Criar conta':'Entrar',su?'Crie sua conta para guardar seus dados com segurança na nuvem.':'Entre com a sua conta do Fine Gestor.',
+    '<div class="fld"><input id="c_email" type="email" placeholder="E-mail" autocomplete="email"></div>'+
+    '<div class="fld"><input id="c_pw" type="password" placeholder="Senha (mínimo 6 caracteres)" autocomplete="'+(su?'new-password':'current-password')+'"></div>'+
+    (su?'<details class="small" style="text-align:left;margin:4px 0"><summary>Ler Termos de uso e Política de privacidade</summary>'+TERMS_HTML+PRIV_HTML+'</details><label class="small" style="display:flex;gap:8px;text-align:left;margin:8px 0"><input type="checkbox" id="c_ok"><span>Li e aceito os Termos de uso e a Política de privacidade.</span></label>':'')+
+    '<div class="gerr">'+(err||'')+'</div>'+(info?'<div class="small" style="color:#08d9a6;margin-bottom:8px">'+info+'</div>':'')+
+    '<button class="btn primary" onclick="app.cLogin(\''+mode+'\')">'+(su?'Criar conta':'Entrar')+'</button>'+
+    '<button class="glink" onclick="app.cMode(\''+(su?'login':'signup')+'\')">'+(su?'Já tenho conta':'Criar conta')+'</button>'+
+    (su?'':'<button class="glink" onclick="app.cForgot()">Esqueci minha senha</button>')));
+  var e=$('#c_email');if(e){e.value=lastEmail;}
+  var p=$('#c_pw');if(p)p.addEventListener('keydown',function(ev){if(ev.key==='Enter')app.cLogin(mode);});
+}
+function renderNewPw(err){
+  gShow(gCard('Nova senha','Escolha a nova senha da sua conta.','<div class="fld"><input id="c_pw" type="password" placeholder="Nova senha (mínimo 6 caracteres)" autocomplete="new-password"></div><div class="gerr">'+(err||'')+'</div><button class="btn primary" onclick="app.cSetPw()">Salvar senha</button>'));
+}
+function renderOffline(){
+  gShow(gCard('Sem conexão','Não foi possível confirmar sua licença agora. Conecte-se à internet e tente novamente.','<button class="btn primary" onclick="cloudBoot()">Tentar de novo</button><button class="glink" onclick="app.cSignOut()">Sair da conta</button>'));
+}
+function cFromHash(h){
+  var p=new URLSearchParams(h.replace(/^#/,'')),at=p.get('access_token'),type=p.get('type');
+  try{history.replaceState(null,'',location.pathname+location.search);}catch(e){}
+  cReq('/auth/v1/user',{},at).then(function(r){
+    if(!r.ok||!r.json)throw 0;
+    saveSession({access_token:at,refresh_token:p.get('refresh_token'),expires_in:Number(p.get('expires_in'))||3600,user:r.json});
+    if(type==='recovery')renderNewPw();else cloudBoot();
+  }).catch(function(){renderLogin('login','O link expirou. Entre com seu e-mail e senha.');});
+}
+function cloudBoot(){
+  if(/access_token=/.test(location.hash||''))return cFromHash(location.hash);
+  var s=cSession();if(!s){renderLogin('login');return;}
+  cLicCheck().then(function(ok){if(ok)cEnter();else renderActivation();}).catch(function(){
+    var l=lsGet(LIC_K);
+    if(!cSession())renderLogin('login');
+    else if(l&&l.uid===s.user.id&&Date.now()-l.at<30*864e5)cEnter();
+    else renderOffline();
+  });
+}
+function cEnter(){
+  db.settings.activated=true;
+  var t=new Promise(function(res){setTimeout(res,6000);});
+  Promise.race([cPull().catch(function(){}),t]).then(function(){
+    if(db.settings.pinHash)renderLock();else startApp();
+  });
+}
+
+/* sincronização: o programa continua guardando no aparelho e envia à nuvem */
+function dbEmpty(d){return !['incomes','receipts','bills','payments','savings','accounts','cards','cardTx'].some(function(k){return d[k]&&d[k].length;});}
+function snapshot(){var c=JSON.parse(JSON.stringify(db));if(c.settings){delete c.settings.pinHash;delete c.settings.activated;delete c.settings.licenseKey;}return c;}
+function applyCloud(d){
+  var keep={pinHash:db.settings.pinHash,activated:db.settings.activated,licenseKey:db.settings.licenseKey};
+  var b=defaults();db=Object.assign(b,d);db.settings=Object.assign(defaults().settings,d.settings||{},keep);db.budgets=Object.assign(defaults().budgets,d.budgets||{});
+  cloudApplying=true;save();cloudApplying=false;
+}
+function syncMeta(){return lsGet(SYNC_K)||{ver:null,dirty:false,at:0};}
+function cloudDirty(){
+  if(!cloudOn()||cloudApplying||!cSession())return;
+  var m=syncMeta();m.dirty=true;lsSet(SYNC_K,m);chg++;
+  clearTimeout(pushTimer);pushTimer=setTimeout(function(){cPush();},2500);
+}
+function cConflict(row){
+  return new Promise(function(res){
+    gHide();
+    modal('Dados diferentes','<p>Há dados na sua conta (nuvem) e dados diferentes neste aparelho. Qual versão você quer manter?</p><p class="small muted">A outra versão será substituída.</p>',[
+      {label:'Manter os deste aparelho',fn:function(){var m=syncMeta();m.ver=row.version;m.dirty=true;lsSet(SYNC_K,m);cPush().then(res);}},
+      {label:'Usar os da nuvem',cls:'primary',fn:function(){applyCloud(row.data);var m=syncMeta();m.ver=row.version;m.dirty=false;m.at=Date.now();lsSet(SYNC_K,m);render();res();}}
+    ]);
+  });
+}
+function cPull(){
+  var s=cSession(),m=syncMeta();if(!s)return Promise.reject('nosession');
+  if(m.uid&&m.uid!==s.user.id){db=defaults();cloudApplying=true;save();cloudApplying=false;m={ver:null,dirty:false,at:0};}
+  m.uid=s.user.id;lsSet(SYNC_K,m);
+  return cToken().then(function(t){return cReq('/rest/v1/user_data?select=data,version&user_id=eq.'+s.user.id,{},t);}).then(function(r){
+    if(!r.ok)return Promise.reject('net');
+    var row=r.json&&r.json[0],m=syncMeta();
+    if(!row){if(!dbEmpty(db)){m.ver=null;lsSet(SYNC_K,m);return cPush();}return;}
+    if(m.ver===row.version){if(m.dirty)return cPush();return;}
+    if(!m.dirty&&(m.ver!==null||dbEmpty(db))){applyCloud(row.data);m.ver=row.version;m.at=Date.now();lsSet(SYNC_K,m);return;}
+    return cConflict(row);
+  });
+}
+function cPush(){
+  var s=cSession();if(!s||!cloudOn())return Promise.resolve();
+  var m=syncMeta(),c0=chg;
+  return cToken().then(function(t){
+    var snap=snapshot();
+    if(m.ver===null)return cReq('/rest/v1/user_data',{method:'POST',headers:{'Prefer':'return=representation,resolution=merge-duplicates'},body:JSON.stringify({user_id:s.user.id,data:snap})},t);
+    return cReq('/rest/v1/user_data?user_id=eq.'+s.user.id+'&version=eq.'+m.ver,{method:'PATCH',headers:{'Prefer':'return=representation'},body:JSON.stringify({data:snap})},t);
+  }).then(function(r){
+    if(r.ok&&r.json&&r.json[0]){var mm=syncMeta();mm.ver=r.json[0].version;mm.dirty=(chg!==c0);mm.at=Date.now();lsSet(SYNC_K,mm);if(mm.dirty){clearTimeout(pushTimer);pushTimer=setTimeout(cPush,1500);}return;}
+    if(r.ok)return cPull();
+  }).catch(function(){});
+}
+window.addEventListener('online',function(){if(cloudOn()&&cSession()&&syncMeta().dirty)cPush();});
+document.addEventListener('visibilitychange',function(){if(cloudOn()&&cSession()&&document.visibilityState==='hidden'&&syncMeta().dirty)cPush();});
+function syncLabel(){var m=syncMeta();return m.dirty?'alterações aguardando envio':(m.at?'em dia (última às '+new Date(m.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+')':'aguardando');}
+function cSyncNow(btn){
+  btn.textContent='Sincronizando…';
+  cPush().then(cPull).then(function(){btn.textContent='Pronto ✓';render();}).catch(function(){btn.textContent='Sem conexão';});
+}
+function cSignOut(){
+  function out(){try{localStorage.removeItem(KEY);[AUTH_K,LIC_K,SYNC_K].forEach(function(k){localStorage.removeItem(k);});}catch(e){}location.reload();}
+  function ask(){confirmBox('Sair da conta','Os dados deste aparelho serão apagados. Eles continuam salvos na sua conta, na nuvem. Deseja sair?','Sair',out,true);}
+  if(syncMeta().dirty){cPush().then(function(){
+    if(syncMeta().dirty)confirmBox('Alterações não enviadas','Há alterações que ainda não foram enviadas para a nuvem e serão perdidas se você sair agora. Sair mesmo assim?','Sair mesmo assim',out,true);else ask();});}
+  else ask();
+}
+
 /* ---------- API pública usada pelos botões ---------- */
 window.app={
+  cMode:function(m){renderLogin(m);},
+  cLogin:function(mode){
+    var em=($('#c_email').value||'').trim().toLowerCase(),pw=$('#c_pw').value||'';lastEmail=em;
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em))return renderLogin(mode,'Informe um e-mail válido.');
+    if(pw.length<6)return renderLogin(mode,'A senha precisa ter pelo menos 6 caracteres.');
+    if(mode==='signup'&&!$('#c_ok').checked)return renderLogin(mode,'Para criar a conta, aceite os termos.');
+    var call=mode==='signup'?cReq('/auth/v1/signup',{method:'POST',body:JSON.stringify({email:em,password:pw})}):cReq('/auth/v1/token?grant_type=password',{method:'POST',body:JSON.stringify({email:em,password:pw})});
+    call.then(function(r){
+      if(r.ok&&r.json&&r.json.access_token){saveSession(r.json);if(mode==='signup')db.settings.termsAccepted=new Date().toISOString();cloudBoot();return;}
+      if(r.ok&&mode==='signup'){renderLogin('login','','Conta criada! Enviamos um e-mail de confirmação. Confirme e depois entre.');return;}
+      renderLogin(mode,cErrMsg(r));
+    }).catch(function(){renderLogin(mode,'Sem conexão. Conecte-se à internet para entrar.');});
+  },
+  cForgot:function(){
+    var em=($('#c_email').value||'').trim().toLowerCase();lastEmail=em;
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em))return renderLogin('login','Digite seu e-mail acima e clique de novo.');
+    cReq('/auth/v1/recover',{method:'POST',body:JSON.stringify({email:em})}).then(function(){renderLogin('login','','Se este e-mail tiver conta, enviamos um link para criar uma nova senha.');}).catch(function(){renderLogin('login','Sem conexão.');});
+  },
+  cSetPw:function(){
+    var pw=$('#c_pw').value||'';if(pw.length<6)return renderNewPw('A senha precisa ter pelo menos 6 caracteres.');
+    cToken().then(function(t){return cReq('/auth/v1/user',{method:'PUT',body:JSON.stringify({password:pw})},t);}).then(function(r){if(r.ok)cloudBoot();else renderNewPw(cErrMsg(r));}).catch(function(){renderNewPw('Sem conexão.');});
+  },
+  cSignOut:cSignOut,
   tryActivate:function(){
     var k=($('#g_key')||{}).value||'';
+    if(cloudOn()){
+      if(!k.trim())return renderActivation('Informe a chave de ativação.');
+      var msg={invalida:'Chave inválida. Confira e tente novamente.',cancelada:'Esta chave foi cancelada. Fale com o suporte.',em_uso:'Esta chave já está em uso em outra conta.',login:'Sua sessão expirou. Entre de novo.'};
+      cActivate(k).then(function(res){
+        if(res==='ok'){lsSet(LIC_K,{uid:cSession().user.id,at:Date.now()});cEnter();}
+        else renderActivation(msg[res]||'Não foi possível ativar agora. Tente novamente.');
+      }).catch(function(){renderActivation('Sem conexão. Tente de novo.');});
+      return;
+    }
     if(!validateKey(k)){renderActivation('Chave inválida. Confira e tente novamente.');return;}
     db.settings.activated=true;db.settings.licenseKey=k.toUpperCase();save();
     renderSetPin();

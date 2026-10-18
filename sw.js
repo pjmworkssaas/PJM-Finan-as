@@ -1,5 +1,5 @@
 /* Fine Gestor — uso offline. Troque a versão abaixo a cada atualização do index.html. */
-var CACHE='fine-gestor-v2';
+var CACHE='fine-gestor-v3';
 var FILES=['./','index.html','manifest.webmanifest','icon-192.png','icon-512.png'];
 self.addEventListener('install',function(e){
   e.waitUntil(caches.open(CACHE).then(function(c){return c.addAll(FILES);}).then(function(){return self.skipWaiting();}));
@@ -9,6 +9,7 @@ self.addEventListener('activate',function(e){
 });
 self.addEventListener('fetch',function(e){
   if(e.request.method!=='GET')return;
+  if(new URL(e.request.url).origin!==self.location.origin)return; /* nunca guardar respostas do Supabase ou de outros sites */
   e.respondWith(
     fetch(e.request).then(function(r){
       var copy=r.clone();caches.open(CACHE).then(function(c){c.put(e.request,copy);});return r;
