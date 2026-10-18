@@ -217,6 +217,21 @@ html,body{max-width:100%;overflow-x:clip}
 input,select,textarea{min-width:0;max-width:100%}
 .modal{max-width:min(640px,100%)}
 .fab{right:max(12px,env(safe-area-inset-right,0px))}
+
+/* menu em gaveta no celular (☰) */
+.menubtn,.menuback{display:none}
+@media (max-width:720px){
+  .menubtn{display:flex;order:2;width:100%;align-items:center;gap:10px;margin-top:8px;padding:11px 14px;background:var(--bg);border:1px solid var(--border);border-radius:12px;color:var(--text);font:inherit;font-weight:700;cursor:pointer;text-align:left}
+  .menubtn .bars{font-size:20px;line-height:1}
+  .menubtn #menuBadge{margin-left:auto}
+  .side .tabs{position:fixed;top:0;bottom:0;left:0;width:min(82vw,300px);max-width:none;z-index:90;margin:0;order:0;padding:calc(18px + env(safe-area-inset-top,0px)) 12px calc(18px + env(safe-area-inset-bottom,0px));background:var(--card);border-right:1px solid var(--border);box-shadow:0 0 40px rgba(0,0,0,.45);flex-direction:column;overflow-y:auto;overflow-x:hidden;gap:4px;transform:translateX(-105%);visibility:hidden;transition:transform .22s ease,visibility 0s linear .22s}
+  body.menu-open .side .tabs{transform:none;visibility:visible;transition:transform .22s ease}
+  .side .tab{width:100%;flex:none;border-radius:10px;padding:13px 14px;font-size:15px}
+  .menuback{display:block;position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .2s}
+  body.menu-open .menuback{opacity:1;pointer-events:auto}
+  body.menu-open{overflow:hidden}
+  body.menu-open .side{z-index:100}
+}
 @media print{#tabs,.noprint,.btn,header,#stor{display:none!important}body{background:#fff}.card{box-shadow:none;break-inside:avoid}}
 </style>
 </head>
@@ -225,6 +240,8 @@ input,select,textarea{min-width:0;max-width:100%}
 <div class="shell" id="shell" style="display:none">
   <aside class="side">
     <div class="brand"><img class="brandimg" src="" id="brandLogo" alt="Fine Gestor"> Fine Gestor</div>
+    <button class="menubtn" id="menuBtn" type="button" aria-label="Abrir menu" aria-expanded="false" onclick="app.menu()"><span class="bars">☰</span><span id="menuLabel">Menu</span><span id="menuBadge"></span></button>
+    <div class="menuback" onclick="app.menu(false)"></div>
     <nav class="tabs" id="tabs"></nav>
     <button class="icon sidecfg" onclick="app.settings()">⚙️ Configurações</button>
   </aside>
@@ -1308,6 +1325,9 @@ function renderChrome(){
     if(t[0]==='notif'&&unread)b='<span class="tb">'+unread+'</span>';
     return '<button class="tab'+(ui.tab===t[0]?' on':'')+'" onclick="app.go(\''+t[0]+'\')">'+t[1]+' '+t[2]+b+'</button>';
   }).join('');
+  var cur=TABS.filter(function(t){return t[0]===ui.tab;})[0];
+  $('#menuLabel').textContent=cur?cur[1]+' '+cur[2]:'Menu';
+  $('#menuBadge').innerHTML=(urgent+unread)?'<span class="tb red">'+(urgent+unread)+'</span>':'';
   $('#stor').innerHTML=storageOK?'':'<div class="banner warn"><div>⚠️ Este navegador não permitiu salvar os dados. O que você lançar some ao fechar a página. Use ⚙️ → Exportar backup.</div></div>';
   document.title=(urgent?'('+urgent+') ':'')+'Fine Gestor';
 }
@@ -1774,6 +1794,7 @@ function cPush(){
     if(r.ok)return cPull();
   }).catch(function(){});
 }
+document.addEventListener('keydown',function(e){if(e.key==='Escape')document.body.classList.remove('menu-open');});
 window.addEventListener('online',function(){if(cloudOn()&&cSession()&&syncMeta().dirty)cPush();});
 document.addEventListener('visibilitychange',function(){if(cloudOn()&&cSession()&&document.visibilityState==='hidden'&&syncMeta().dirty)cPush();});
 function syncLabel(){var m=syncMeta();return m.dirty?'alterações aguardando envio':(m.at?'em dia (última às '+new Date(m.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+')':'aguardando');}
@@ -1853,7 +1874,8 @@ window.app={
   newAcc:function(){acForm();},acMove:acMove,acDel:acDelete,
   newCard:function(){cdForm();},cdBuy:cdBuy,cdEditCard:function(i){cdForm(i);},acRename:acRename,quick:quickExpense,cdPay:cdPay,cdUnpay:cdUnpay,cdDelTx:cdDelTx,cdDelCard:cdDelCard,cdMon:function(n){cdMonth=ymAdd(cdMonth,n);render();},
   srch:srchUpdate,
-  go:function(t){ui.tab=t;render();window.scrollTo(0,0);},
+  menu:function(open){var b=document.body.classList;if(open===false)b.remove('menu-open');else b.toggle('menu-open');$('#menuBtn').setAttribute('aria-expanded',b.contains('menu-open')?'true':'false');},
+  go:function(t){document.body.classList.remove('menu-open');ui.tab=t;render();window.scrollTo(0,0);},
   shiftMonth:function(n){
     var p=ui.month.split('-').map(Number);var d=new Date(p[0],p[1]-1+n,1);
     ui.month=d.getFullYear()+'-'+pad(d.getMonth()+1);
