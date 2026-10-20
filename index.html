@@ -943,17 +943,20 @@ function viewBuscar(){
 /* ---------- acabamento: termos, privacidade e boas-vindas ---------- */
 var TERMS_HTML=[
 '<p><b>1. O que é.</b> O Fine Gestor é uma ferramenta de organização financeira pessoal. Ele registra e calcula o que você informa; não é consultoria financeira, contábil ou jurídica, e as decisões tomadas com base nele são de sua responsabilidade.</p>',
-'<p><b>2. Seus dados.</b> Você é o responsável pelas informações que cadastra. Na versão atual, tudo fica salvo apenas no navegador do seu aparelho. Limpar os dados do navegador ou trocar de aparelho apaga o que não tiver sido exportado, por isso faça backups com frequência (⚙️ → Exportar backup).</p>',
-'<p><b>3. Cálculos.</b> Valores, juros, multas, faturas e alertas são estimativas feitas a partir dos dados que você digitou. Confira sempre com o contrato, a fatura ou o extrato oficial.</p>',
-'<p><b>4. Licença.</b> O acesso é pessoal e intransferível, conforme o código de ativação recebido. É proibido copiar, revender ou redistribuir o programa sem autorização.</p>',
-'<p><b>5. Disponibilidade.</b> O programa é fornecido no estado em que se encontra, sem garantia de funcionamento ininterrupto. Funções podem ser alteradas ou acrescentadas ao longo do tempo.</p>',
-'<p><b>6. Contato.</b> Dúvidas e solicitações podem ser enviadas pela aba Suporte do próprio programa.</p>'].join('');
+'<p><b>2. Conta e licença.</b> O acesso exige uma conta (e-mail e senha) e uma chave de ativação, de uso pessoal e intransferível. Você é responsável por manter sua senha em segurança. É proibido compartilhar, revender ou redistribuir a chave ou o programa. Licenças usadas de forma indevida ou obtidas por fraude podem ser canceladas.</p>',
+'<p><b>3. Seus dados.</b> Você é o responsável pelas informações que cadastra. Elas ficam guardadas na sua conta, em servidores de nuvem, e uma cópia fica no seu aparelho para uso sem internet. Você pode exportar seus dados a qualquer momento (⚙️ → backup ou planilha). Faça backups periódicos por precaução.</p>',
+'<p><b>4. Cálculos.</b> Valores, juros, multas, faturas e alertas são estimativas feitas a partir dos dados que você digitou. Confira sempre com o contrato, a fatura ou o extrato oficial.</p>',
+'<p><b>5. Pagamento e reembolso.</b> O pagamento é processado pelo Mercado Pago. Em compras feitas pela internet, você pode desistir em até 7 dias após a compra e pedir o reembolso pelo suporte.</p>',
+'<p><b>6. Disponibilidade.</b> O programa é fornecido no estado em que se encontra, sem garantia de funcionamento ininterrupto. Funções podem ser alteradas ou acrescentadas ao longo do tempo.</p>',
+'<p><b>7. Contato.</b> Dúvidas e solicitações podem ser enviadas pela aba Suporte do próprio programa.</p>'].join('');
 var PRIV_HTML=[
-'<p><b>Quais dados são tratados.</b> Apenas os que você mesmo cadastra: entradas, contas, cartões, bancos, poupanças e anotações.</p>',
-'<p><b>Onde ficam.</b> Na versão atual, os dados ficam somente no armazenamento local do seu navegador. Eles não são enviados a servidores nem compartilhados com terceiros.</p>',
-'<p><b>Para que servem.</b> Exclusivamente para o programa funcionar: calcular saldos, faturas, alertas e relatórios para você.</p>',
-'<p><b>Seus direitos (LGPD).</b> Você pode acessar, exportar (⚙️ → backup ou planilha) e apagar seus dados a qualquer momento (⚙️ → Apagar tudo).</p>',
-'<p><b>Versão online.</b> Se o programa passar a oferecer conta e sincronização na nuvem, esta política será atualizada antes e você será avisado sobre quais dados serão armazenados, onde e por quê.</p>'].join('');
+'<p><b>Quais dados são tratados.</b> (a) Dados da conta: e-mail e senha (armazenada de forma protegida). (b) Dados que você cadastra no programa: entradas, contas, cartões, bancos, poupanças e anotações. (c) Dados da compra: nome, e-mail e WhatsApp informados no pagamento, valor e forma de pagamento.</p>',
+'<p><b>Para que usamos.</b> Para criar e manter a sua conta, validar a sua licença, sincronizar os seus dados entre aparelhos, enviar a chave de ativação, prestar suporte e cumprir obrigações legais. Não vendemos seus dados e não os usamos para publicidade.</p>',
+'<p><b>Onde ficam.</b> Os dados da conta e do programa ficam em servidores de nuvem (Supabase), com acesso restrito a cada usuário, e uma cópia fica no seu aparelho. O pagamento é feito no Mercado Pago, e nós não armazenamos dados de cartão.</p>',
+'<p><b>Com quem compartilhamos.</b> Apenas com prestadores necessários ao serviço: hospedagem e banco de dados (Supabase), processamento do servidor da loja (Cloudflare), pagamento (Mercado Pago) e a ferramenta de mensagens usada pela equipe para ser avisada de novas compras. Podemos compartilhar dados quando a lei exigir.</p>',
+'<p><b>Por quanto tempo.</b> Mantemos os dados enquanto a sua conta existir. Ao pedir a exclusão, apagamos os dados da conta, salvo o que a lei exigir guardar, como registros de compra.</p>',
+'<p><b>Seus direitos (LGPD).</b> Você pode confirmar o tratamento, acessar, corrigir, exportar e pedir a exclusão dos seus dados, e revogar consentimentos. Para exercer esses direitos, use a aba Suporte do programa. Você também pode exportar tudo em ⚙️ e sair da conta quando quiser.</p>',
+'<p><b>Alterações.</b> Se esta política mudar, avisaremos no programa antes de a mudança valer.</p>'].join('');
 function legalModal(kind){modal(kind==='t'?'Termos de uso':'Política de privacidade','<div class="small">'+(kind==='t'?TERMS_HTML:PRIV_HTML)+'</div>',[{label:'Fechar'}]);}
 function onboard(){
   var body='<div class="err" id="ferr"></div><p>Seu controle financeiro em um só lugar. Um resumo rápido do que você encontra aqui:</p>'+
@@ -964,7 +967,7 @@ function onboard(){
     '➕ <b>+ Gasto</b> — o botão no canto lança um gasto do dia a dia em segundos.<br>'+
     '📊 <b>Relatórios</b> e 🔍 <b>Buscar</b> — gráficos, PDF e filtros.<br>'+
     '⚙️ <b>Configurações</b> — backup, alertas, senha e extrato bancário.</p>'+
-    '<p><b>Importante:</b> seus dados ficam salvos só neste aparelho. Faça backup de vez em quando em ⚙️.</p></div>'+
+    '<p><b>Importante:</b> '+(cloudOn()?'seus dados ficam guardados na sua conta e sincronizam entre os seus aparelhos. O backup em ⚙️ continua disponível.':'seus dados ficam salvos só neste aparelho. Faça backup de vez em quando em ⚙️.')+'</p></div>'+
     '<details style="margin:6px 0"><summary>Ler os Termos de uso</summary><div class="small">'+TERMS_HTML+'</div></details>'+
     '<details style="margin:6px 0"><summary>Ler a Política de privacidade</summary><div class="small">'+PRIV_HTML+'</div></details>'+
     '<label class="small" style="display:flex;gap:8px;align-items:flex-start;margin-top:10px"><input type="checkbox" id="ob_ok"><span>Li e aceito os Termos de uso e a Política de privacidade.</span></label>';
