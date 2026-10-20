@@ -254,6 +254,7 @@ input,select,textarea{min-width:0;max-width:100%}
 </div>
 <div class="toasts" id="toasts"></div>
 
+<script src="config.js"></script>
 <script>
 (function(){
 'use strict';
@@ -1652,7 +1653,7 @@ function settingsModal(){
 }
 
 /* ---------- conta, licença e nuvem (Supabase) ---------- */
-var CLOUD={url:'COLE_AQUI_A_URL_DO_PROJETO',key:'COLE_AQUI_A_CHAVE_PUBLICA'};
+var CLOUD=window.FG_CONFIG||{url:'COLE_AQUI_A_URL_DO_PROJETO',key:'COLE_AQUI_A_CHAVE_PUBLICA'}; /* a configuração fica no arquivo config.js */
 function cloudOn(){return /^https:\/\//.test(CLOUD.url)&&CLOUD.key.indexOf('COLE')!==0;}
 var AUTH_K='fg-auth',LIC_K='fg-lic',SYNC_K='fg-sync',cloudApplying=false,pushTimer=null,chg=0,lastEmail='';
 function lsGet(k){try{return JSON.parse(localStorage.getItem(k)||'null');}catch(e){return null;}}
