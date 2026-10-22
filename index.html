@@ -218,6 +218,8 @@ input,select,textarea{min-width:0;max-width:100%}
 .modal{max-width:min(640px,100%)}
 .fab{right:max(12px,env(safe-area-inset-right,0px))}
 
+/* botão + Gasto só aparece dentro do programa (nunca em login, ativação ou bloqueio) */
+body.gate-on .fab{display:none!important}
 /* menu em gaveta no celular (☰) */
 .menubtn,.menuback{display:none}
 @media (max-width:720px){
@@ -235,7 +237,7 @@ input,select,textarea{min-width:0;max-width:100%}
 @media print{#tabs,.noprint,.btn,header,#stor{display:none!important}body{background:#fff}.card{box-shadow:none;break-inside:avoid}}
 </style>
 </head>
-<body>
+<body class="gate-on">
 <div id="gate" class="gate"></div>
 <div class="shell" id="shell" style="display:none">
   <aside class="side">
@@ -1418,8 +1420,8 @@ function validateKey(raw){
   var body=clean.slice(3,11),cc=clean.slice(11,13);
   return keyChecksum(body)===cc;
 }
-function gShow(html){$('#gate').innerHTML=html;$('#gate').classList.remove('hidden');$('#shell').style.display='none';}
-function gHide(){$('#gate').classList.add('hidden');$('#shell').style.display='';}
+function gShow(html){$('#gate').innerHTML=html;$('#gate').classList.remove('hidden');$('#shell').style.display='none';document.body.classList.add('gate-on');}
+function gHide(){$('#gate').classList.add('hidden');$('#shell').style.display='';document.body.classList.remove('gate-on');}
 function renderActivation(err){
   gShow('<div class="gcard"><img src="'+LOGO_DATA+'" alt="Fine Gestor"><h2>Ativar o Fine Gestor</h2><p class="gsub">Informe a chave de ativação que você recebeu após a compra.</p>'+
     '<div class="fld"><input id="g_key" placeholder="'+(cloudOn()?'FG-XXXX-XXXX-XXXX':'PJM-XXXX-XXXX-XX')+'" style="text-transform:uppercase;letter-spacing:1px;text-align:center"></div>'+
