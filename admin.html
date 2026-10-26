@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#09090b">
 <title>Administração — Fine Gestor</title>
 <link rel="icon" href="icon-192.png">
-<script src="config.js"></script>nom 
+<script src="config.js"></script>
 <style>
 :root{--bg:#09090b;--card:#121317;--bd:#23262d;--tx:#f2f4f7;--mut:#9aa3b2;--g:#08d9a6;--red:#ff6b6b;--ora:#ffb454;--blu:#6ea8ff;--yel:#f3d35c}
 *{box-sizing:border-box;margin:0}html,body{max-width:100%;overflow-x:clip}
@@ -97,6 +97,7 @@ function calEvents(D,rows){
     if(e.kind==='desativada')ev.push({d:dkey(e.at),k:'cancel',t:'⛔ Licença desativada',x:e.detail||''});
     if(e.kind==='reativada')ev.push({d:dkey(e.at),k:'ativ',t:'🔁 Licença reativada',x:e.detail||''});
     if(e.kind==='liberada')ev.push({d:dkey(e.at),k:'ativ',t:'🔓 Licença liberada',x:e.detail||''});
+    if(e.kind==='conta_excluida')ev.push({d:dkey(e.at),k:'cancel',t:'🗑 Conta excluída',x:e.detail||''});
     if(e.kind==='reembolsado')ev.push({d:dkey(e.at),k:'cancel',t:'↩ Reembolso',x:e.detail||''});
   });
   D.notes.forEach(function(n){ev.push({d:n.data,k:n.tipo==='comentario'?'nota':'aviso',t:(n.tipo==='comentario'?'📝 ':n.tipo==='aviso'?'🔔 ':'📌 ')+n.titulo+(n.concluido?' ✔':''),x:n.texto||'',note:n});});
@@ -156,7 +157,7 @@ function vGeral(){
   h+='<div class="c"><h3>Últimas atividades</h3>'+(last.length?'<div class="tl">'+last.map(function(e){return '<div><i>'+fdate(e.at)+'</i>'+esc(evName(e.kind))+' <span class="mut">'+esc(e.detail||'')+'</span></div>';}).join('')+'</div>':'<p class="mut sm">Sem atividades ainda.</p>')+'</div>';
   return h;
 }
-function evName(k){return {pedido_criado:'Pedido criado',pago:'Pagamento confirmado',licenca_criada:'Licença criada',cancelado:'Pedido cancelado',desativada:'Licença desativada',reativada:'Licença reativada',liberada:'Licença liberada',reembolsado:'Reembolso',licenca_manual:'Licença manual'}[k]||k;}
+function evName(k){return {pedido_criado:'Pedido criado',pago:'Pagamento confirmado',licenca_criada:'Licença criada',cancelado:'Pedido cancelado',desativada:'Licença desativada',reativada:'Licença reativada',liberada:'Licença liberada',reembolsado:'Reembolso',licenca_manual:'Licença manual',conta_excluida:'Conta excluída pelo cliente'}[k]||k;}
 function vClientes(){
   var c=counts(ROWS),q=S.q.toLowerCase(),keys=['todos','ativo','aguardando_ativacao','aguardando_pgto','desativado','cancelado'];if(c.pago_sem_licenca)keys.push('pago_sem_licenca');
   var list=ROWS.filter(function(r){return (S.f==='todos'||r.st===S.f)&&(!q||[r.nome,r.email,r.whats,r.conta,r.l&&r.l.chave].join(' ').toLowerCase().indexOf(q)>=0);});

@@ -957,7 +957,7 @@ var PRIV_HTML=[
 '<p><b>Onde ficam.</b> Os dados da conta e do programa ficam em servidores de nuvem (Supabase), com acesso restrito a cada usuário, e uma cópia fica no seu aparelho. O pagamento é feito no Mercado Pago, e nós não armazenamos dados de cartão.</p>',
 '<p><b>Com quem compartilhamos.</b> Apenas com prestadores necessários ao serviço: hospedagem e banco de dados (Supabase), processamento do servidor da loja (Cloudflare), pagamento (Mercado Pago) e a ferramenta de mensagens usada pela equipe para ser avisada de novas compras. Podemos compartilhar dados quando a lei exigir.</p>',
 '<p><b>Por quanto tempo.</b> Mantemos os dados enquanto a sua conta existir. Ao pedir a exclusão, apagamos os dados da conta, salvo o que a lei exigir guardar, como registros de compra.</p>',
-'<p><b>Seus direitos (LGPD).</b> Você pode confirmar o tratamento, acessar, corrigir, exportar e pedir a exclusão dos seus dados, e revogar consentimentos. Para exercer esses direitos, use a aba Suporte do programa. Você também pode exportar tudo em ⚙️ e sair da conta quando quiser.</p>',
+'<p><b>Seus direitos (LGPD).</b> Você pode confirmar o tratamento, acessar, corrigir, exportar e pedir a exclusão dos seus dados, e revogar consentimentos. Você pode exportar tudo em ⚙️ e excluir a sua conta por conta própria em ⚙️ → Conta e nuvem. Para os demais direitos, use a aba Suporte do programa.</p>',
 '<p><b>Alterações.</b> Se esta política mudar, avisaremos no programa antes de a mudança valer.</p>'].join('');
 function legalModal(kind){modal(kind==='t'?'Termos de uso':'Política de privacidade','<div class="small">'+(kind==='t'?TERMS_HTML:PRIV_HTML)+'</div>',[{label:'Fechar'}]);}
 function onboard(){
@@ -1606,7 +1606,7 @@ function loadSample(){
 function settingsModal(){
   var s=db.settings;var canN='Notification' in window;
   var body='<div class="err" id="ferr"></div>'+
-    (cloudOn()&&cSession()?'<div class="setblock"><h4>☁️ Conta e nuvem</h4><p class="small muted" style="margin-top:0">Conta: <b>'+esc(cSession().user.email)+'</b><br>Sincronização: '+syncLabel()+'</p><div class="btnrow"><button class="btn" id="b_sync">Sincronizar agora</button><button class="btn" id="b_out">Sair da conta</button></div></div>':'')+
+    (cloudOn()&&cSession()?'<div class="setblock"><h4>☁️ Conta e nuvem</h4><p class="small muted" style="margin-top:0">Conta: <b>'+esc(cSession().user.email)+'</b><br>Sincronização: '+syncLabel()+'</p><div class="btnrow"><button class="btn" id="b_sync">Sincronizar agora</button><button class="btn" id="b_out">Sair da conta</button><button class="btn danger" id="b_del">Excluir minha conta</button></div></div>':'')+
     '<div class="setblock"><h4>🔑 Licença e acesso</h4><p class="small muted" style="margin-top:0">'+(cloudOn()?'Licença: <b>ativa</b>':'Chave ativada: <span class="mono">'+esc(s.licenseKey||'—')+'</span>')+'</p>'+
     fld('Senha de acesso','<input id="s_pin" type="password" placeholder="'+(s.pinHash?'Deixe em branco para manter a atual':'Nenhuma definida — opcional')+'">','Deixe em branco para não alterar. Para remover, digite REMOVER.')+'</div>'+
     '<div class="setblock"><h4>🔔 Alertas e aparência</h4><div class="setgrid">'+
@@ -1640,7 +1640,7 @@ function settingsModal(){
     $('#b_json',root).addEventListener('click',exportJSON);
     $('#b_csv',root).addEventListener('click',exportCSV);
     $('#b_ics',root).addEventListener('click',exportICS);$('#b_db',root).addEventListener('click',exportForDB);$('#b_tut',root).addEventListener('click',function(){closeModal();onboard();});$('#b_terms',root).addEventListener('click',function(){legalModal('t');});$('#b_priv',root).addEventListener('click',function(){legalModal('p');});
-    if($('#b_sync',root)){$('#b_sync',root).addEventListener('click',function(){cSyncNow(this);});$('#b_out',root).addEventListener('click',function(){closeModal();cSignOut();});}
+    if($('#b_sync',root)){$('#b_sync',root).addEventListener('click',function(){cSyncNow(this);});$('#b_out',root).addEventListener('click',function(){closeModal();cSignOut();});$('#b_del',root).addEventListener('click',function(){closeModal();cDeleteAccount();});}
     $('#b_stmt',root).addEventListener('click',function(){closeModal();importStatementModal();});
     $('#b_sample',root).addEventListener('click',function(){closeModal();loadSample();});
     $('#b_clear',root).addEventListener('click',function(){
@@ -1807,6 +1807,16 @@ function syncLabel(){var m=syncMeta();return m.dirty?'alterações aguardando en
 function cSyncNow(btn){
   btn.textContent='Sincronizando…';
   cPush().then(cPull).then(function(){btn.textContent='Pronto ✓';render();}).catch(function(){btn.textContent='Sem conexão';});
+}
+function cDeleteAccount(){
+  modal('Excluir minha conta','<div class="err" id="ferr"></div><p>Isto apaga <b>definitivamente</b> a sua conta e todos os seus dados, na nuvem e neste aparelho. Não dá para desfazer.</p><p class="small muted">Sua chave de ativação volta a ficar livre para você criar outra conta depois. Se quiser guardar seus dados, faça um backup em ⚙️ antes.</p>'+fld('Para confirmar, digite EXCLUIR','<input id="del_ok" autocomplete="off">'),[{label:'Cancelar'},{label:'Excluir minha conta',cls:'danger',fn:function(){
+    if((($('#del_ok')||{}).value||'').trim().toUpperCase()!=='EXCLUIR')return showErr('Digite EXCLUIR para confirmar.');
+    cToken().then(function(t){return cReq('/rest/v1/rpc/delete_my_account',{method:'POST',body:'{}'},t);}).then(function(r){
+      if(r.ok&&r.json==='ok'){try{localStorage.removeItem(KEY);[AUTH_K,LIC_K,SYNC_K].forEach(function(k){localStorage.removeItem(k);});}catch(e){}location.reload();}
+      else showErr(r.json==='admin'?'Uma conta de administrador não pode ser excluída por aqui.':'Não foi possível excluir agora. Tente novamente.');
+    }).catch(function(){showErr('Sem conexão. Tente novamente.');});
+    return false;
+  }}]);
 }
 function cSignOut(){
   function out(){try{localStorage.removeItem(KEY);[AUTH_K,LIC_K,SYNC_K].forEach(function(k){localStorage.removeItem(k);});}catch(e){}location.reload();}
