@@ -269,7 +269,7 @@ var DOWF=['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira'
 var IN_TYPES={salario:'Salário',transferencia:'Transferência recebida',pagamento:'Pagamento recebido',outro:'Outra entrada'};
 var BILL_CATS={divida:'Dívida',contrato:'Contrato realizado',plano:'Plano contratado',fixa:'Dívida fixa',pontual:'Dívida pontual'};
 var BILL_TABS=[['divida','Dívidas','🏦'],['contrato','Contratos','📄'],['plano','Planos','📦'],['fixa','Fixas','🔁'],['pontual','Pontuais','📌'],['pagos','Pagamentos feitos','✅']];
-var TABS=[['painel','🏠','Painel'],['cal','📅','Calendário'],['entradas','💵','Entradas'],['contas','🧾','Contas'],['rel','📊','Relatórios'],['buscar','🔍','Buscar'],['calc','🧮','Calculadora'],['cartoes','💳','Cartões'],['bancos','🏦','Bancos'],['poup','🐷','Poupança'],['notif','🔔','Notificações'],['sup','🎧','Suporte']];
+var TABS=[['painel','🏠','Painel'],['cal','📅','Calendário'],['entradas','💵','Entradas'],['contas','🧾','Contas'],['quitar','🎯','Quitar dívidas'],['rel','📊','Relatórios'],['buscar','🔍','Buscar'],['calc','🧮','Calculadora'],['cartoes','💳','Cartões'],['bancos','🏦','Bancos'],['poup','🐷','Poupança'],['notif','🔔','Notificações'],['sup','🎧','Suporte']];
 var NICON={cadastro:'📝',pagamento:'💸',recebimento:'💰',encerrada:'🔒',concretizada:'✅',marcacao:'📌',alerta:'⚠️',deposito:'🐷',saque:'💸'};
 
 function $(s,r){return (r||document).querySelector(s);}
@@ -292,7 +292,7 @@ function monthRange(ym){var p=ym.split('-').map(Number);var last=new Date(p[0],p
 function fld(l,i,h){return '<label class="fld"><span>'+l+'</span>'+i+(h?'<small>'+h+'</small>':'')+'</label>';}
 
 /* ---------- dados ---------- */
-function defaults(){return {incomes:[],receipts:[],bills:[],payments:[],notifs:[],savings:[],savingsTx:[],accounts:[],accountTx:[],cats:[],cards:[],cardTx:[],cardPaid:[],tickets:[],lastAlertDay:'',settings:{alertDays:5,theme:'auto',browserNotif:false,lastBackup:'',activated:false,licenseKey:'',pinHash:''},budgets:{divida:0,contrato:0,plano:0,fixa:0,pontual:0}};}
+function defaults(){return {incomes:[],receipts:[],bills:[],payments:[],notifs:[],savings:[],savingsTx:[],accounts:[],accountTx:[],cats:[],cards:[],cardTx:[],cardPaid:[],tickets:[],lastAlertDay:'',debtPlan:{extra:0,items:[]},settings:{alertDays:5,theme:'auto',browserNotif:false,lastBackup:'',activated:false,licenseKey:'',pinHash:''},budgets:{divida:0,contrato:0,plano:0,fixa:0,pontual:0}};}
 var db=defaults();
 var storageOK=true;
 function load(){
@@ -1338,7 +1338,7 @@ function renderChrome(){
   document.title=(urgent?'('+urgent+') ':'')+'Fine Gestor';
 }
 function render(){
-  var v={painel:viewPainel,rel:viewRel,buscar:viewBuscar,bancos:viewBancos,cartoes:viewCartoes,cal:viewCal,entradas:viewEntradas,contas:viewContas,calc:viewCalc,poup:viewPoupanca,notif:viewNotif,sup:viewSuporte}[ui.tab];
+  var v={painel:viewPainel,quitar:viewQuitar,rel:viewRel,buscar:viewBuscar,bancos:viewBancos,cartoes:viewCartoes,cal:viewCal,entradas:viewEntradas,contas:viewContas,calc:viewCalc,poup:viewPoupanca,notif:viewNotif,sup:viewSuporte}[ui.tab];
   $('#main').innerHTML=v();
   if(ui.tab==='calc')wireCalc();
   if(ui.tab==='notif'&&db.notifs.some(function(n){return !n.read;})){db.notifs.forEach(function(n){n.read=true;});save();}
@@ -1826,8 +1826,89 @@ function cSignOut(){
   else ask();
 }
 
+/* ---------- quitar dívidas (plano bola de neve × avalanche) ---------- */
+function simPlan(items,extra,strat){
+  var d=items.map(function(x){return {nome:x.nome,b:Number(x.saldo),r:Number(x.taxa)/100,m:Number(x.minimo),fim:0};});
+  var mes=0,juros=0,pago=0;
+  function abertas(){return d.filter(function(x){return x.b>0.005;});}
+  while(abertas().length&&mes<600){
+    mes++;
+    d.forEach(function(x){if(x.b>0.005){var j=x.b*x.r;x.b+=j;juros+=j;}});
+    var pool=strat==='min'?0:Number(extra)||0;
+    d.forEach(function(x){
+      if(x.b>0.005){var p=Math.min(x.m,x.b);x.b-=p;pago+=p;if(strat!=='min')pool+=x.m-p;}
+      else if(strat!=='min')pool+=x.m;
+    });
+    if(strat!=='min'){
+      var ord=abertas().sort(strat==='bola'?function(a,b){return a.b-b.b;}:function(a,b){return b.r-a.r||a.b-b.b;});
+      ord.forEach(function(x){if(pool<=0)return;var p=Math.min(pool,x.b);x.b-=p;pool-=p;pago+=p;});
+    }
+    d.forEach(function(x){if(!x.fim&&x.b<=0.005)x.fim=mes;});
+  }
+  return {meses:mes,juros:juros,pago:pago,nunca:abertas().length>0,ordem:d.map(function(x){return {nome:x.nome,mes:x.fim};}).filter(function(x){return x.mes;}).sort(function(a,b){return a.mes-b.mes;})};
+}
+function durTxt(m){var a=Math.floor(m/12),r=m%12,t=[];if(a)t.push(a+(a===1?' ano':' anos'));if(r)t.push(r+(r===1?' mês':' meses'));return t.join(' e ')||'—';}
+function planOf(){if(!db.debtPlan)db.debtPlan={extra:0,items:[]};return db.debtPlan;}
+function quitarResults(){
+  var P=planOf(),it=P.items;if(!it.length)return '';
+  var base=simPlan(it,0,'min'),bo=simPlan(it,P.extra,'bola'),av=simPlan(it,P.extra,'avalanche');
+  var best=(!av.nunca&&av.juros<=bo.juros)?'av':(!bo.nunca?'bo':'');
+  function card(titulo,desc,s,key){
+    var eco=(!s.nunca&&!base.nunca)?base.juros-s.juros:0;
+    return '<div class="card"'+(best===key?' style="border-color:var(--green)"':'')+'><div class="lb">'+titulo+(best===key?' · ⭐ melhor':'')+'</div>'+
+      (s.nunca?'<div class="vl neg" style="font-size:18px">Não quita</div><div class="sub">A parcela mínima não cobre os juros. Aumente o valor extra.</div>':
+      '<div class="vl" style="font-size:22px">'+durTxt(s.meses)+'</div><div class="sub">Juros totais '+brl(s.juros)+' · total pago '+brl(s.pago)+(eco>0.5?'<br><b style="color:var(--green)">Economiza '+brl(eco)+' em juros</b>':'')+'</div>')+
+      '<div class="small muted" style="margin-top:6px">'+desc+'</div></div>';
+  }
+  var rec=best==='av'?av:best==='bo'?bo:null,h='<div class="cards">'+card('Como está hoje','Pagando só as parcelas, sem redirecionar nada.',base,'x')+
+    card('Bola de neve','Quita primeiro a menor dívida. Motiva, porque as vitórias vêm cedo.',bo,'bo')+card('Avalanche','Quita primeiro a de maior juros. Economiza mais dinheiro.',av,'av')+'</div>';
+  if(rec)h+='<div class="card" style="margin-top:12px"><h3 style="margin:0 0 6px">Ordem de quitação ('+(best==='av'?'avalanche':'bola de neve')+')</h3>'+rec.ordem.map(function(o,i){var d=addMonths(todayISO(),o.mes);return '<div class="small" style="padding:3px 0">'+(i+1)+'º <b>'+esc(o.nome)+'</b> — quitada no mês '+o.mes+' ('+d.slice(5,7)+'/'+d.slice(0,4)+')</div>';}).join('')+'</div>';
+  return h;
+}
+function viewQuitar(){
+  var P=planOf(),it=P.items;
+  var h='<div class="sechead"><h2 class="sec" style="margin-top:0">🎯 Quitar dívidas</h2><div class="btnrow"><button class="btn" onclick="app.qImport()">Importar das Contas</button><button class="btn primary" onclick="app.qEdit()">+ Adicionar dívida</button></div></div>';
+  if(!it.length)return h+'<div class="empty">Simule a melhor forma de sair das dívidas. Adicione cada dívida com o saldo que falta pagar, os juros ao mês e a parcela mínima, ou importe as que você já cadastrou em Contas. O programa compara pagar como está, bola de neve e avalanche, e mostra quanto tempo falta e quanto de juros você economiza.</div>';
+  h+='<div class="list">'+it.map(function(x){return '<div class="icard"><div class="top2"><div><span class="nm">'+esc(x.nome)+'</span><div class="sub">Juros '+fmtNum(x.taxa)+'% ao mês · parcela mínima '+brl(x.minimo)+'</div></div><div class="vl" style="font-size:18px">'+brl(x.saldo)+'</div></div>'+
+    '<div class="acts"><button class="btn sm" onclick="app.qEdit(\''+x.id+'\')">Editar</button><button class="btn sm" onclick="app.qDel(\''+x.id+'\')">Excluir</button></div></div>';}).join('')+'</div>';
+  h+='<div class="card" style="margin:12px 0">'+fld('Quanto posso pagar a mais por mês (além das parcelas)','<input id="q_extra" inputmode="decimal" value="'+(P.extra?fmtNum(P.extra):'')+'" placeholder="0,00" oninput="app.qExtra(this.value)">','Esse valor extra é aplicado sempre na dívida prioritária de cada estratégia.')+'</div>';
+  return h+'<div id="q_res">'+quitarResults()+'</div>';
+}
+function qForm(id){
+  var P=planOf(),x=id&&P.items.filter(function(i){return i.id===id;})[0];
+  var body='<div class="err" id="ferr"></div>'+fld('Nome da dívida','<input id="qf_nome" value="'+esc(x?x.nome:'')+'" placeholder="Ex.: Cartão Nubank, Empréstimo">')+
+    '<div class="grid2">'+fld('Saldo devedor (quanto falta pagar)','<input id="qf_saldo" inputmode="decimal" value="'+(x?fmtNum(x.saldo):'')+'" placeholder="0,00">')+fld('Juros ao mês (%)','<input id="qf_taxa" inputmode="decimal" value="'+(x?fmtNum(x.taxa):'')+'" placeholder="Ex.: 3,5">')+'</div>'+
+    fld('Parcela mínima por mês','<input id="qf_min" inputmode="decimal" value="'+(x?fmtNum(x.minimo):'')+'" placeholder="0,00">','Se não souber os juros, olhe no contrato ou na fatura (em geral aparece como “taxa de juros a.m.”).');
+  modal(x?'Editar dívida':'Nova dívida',body,[{label:'Cancelar'},{label:'Salvar',cls:'primary',fn:function(){
+    var nome=$('#qf_nome').value.trim(),s=toNum($('#qf_saldo').value),t=toNum($('#qf_taxa').value),m=toNum($('#qf_min').value);
+    if(!nome)return showErr('Informe o nome.');
+    if(!(s>0))return showErr('Informe o saldo devedor.');
+    if(isNaN(t)||t<0||t>30)return showErr('Informe os juros ao mês entre 0 e 30.');
+    if(!(m>0))return showErr('Informe a parcela mínima.');
+    if(x){x.nome=nome;x.saldo=s;x.taxa=t;x.minimo=m;}else P.items.push({id:uid(),nome:nome,saldo:s,taxa:t,minimo:m});
+    save();render();
+  }}]);
+}
+function qImport(){
+  var P=planOf(),have={};P.items.forEach(function(i){if(i.src)have[i.src]=1;});
+  var c=[];db.bills.forEach(function(b){
+    if(have[b.id])return;var rs=recMap('out',b.id),paid=rs.size,left=0;
+    if(b.recorrencia==='mensal'){if(b.parcelas>0)left=b.parcelas-paid;}else if(!paid)left=1;
+    if(left>0)c.push({b:b,left:left});
+  });
+  if(!c.length)return modal('Importar das Contas','<p>Não há dívidas com parcelas em aberto para importar. Cadastre-as em <b>Contas</b> ou adicione manualmente.</p>',[{label:'Fechar'}]);
+  modal('Importar das Contas','<p class="small muted">Marque as dívidas. O saldo é estimado como parcelas restantes × valor da parcela, e os juros entram como 0% (edite depois).</p>'+
+    c.map(function(o,i){return '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="checkbox" class="qi" value="'+o.b.id+'"> <span>'+esc(o.b.nome)+' · '+o.left+' parcela(s) de '+brl(o.b.valor)+'</span></label>';}).join(''),[{label:'Cancelar'},{label:'Importar',cls:'primary',fn:function(){
+      var ids=[].slice.call(document.querySelectorAll('.qi:checked')).map(function(e){return e.value;});
+      c.forEach(function(o){if(ids.indexOf(o.b.id)>=0)P.items.push({id:uid(),src:o.b.id,nome:o.b.nome,saldo:Math.round(o.left*o.b.valor*100)/100,taxa:0,minimo:Number(o.b.valor)});});
+      save();render();
+    }}]);
+}
 /* ---------- API pública usada pelos botões ---------- */
 window.app={
+  qEdit:function(id){qForm(id);},qImport:qImport,
+  qDel:function(id){confirmBox('Excluir dívida','Remover esta dívida da simulação? (Isso não apaga nada em Contas.)','Excluir',function(){var P=planOf();P.items=P.items.filter(function(i){return i.id!==id;});save();render();},true);},
+  qExtra:function(v){var P=planOf(),n=toNum(v);P.extra=isNaN(n)||n<0?0:n;save();var r=$('#q_res');if(r)r.innerHTML=quitarResults();},
   cMode:function(m){renderLogin(m);},
   cLogin:function(mode){
     var em=($('#c_email').value||'').trim().toLowerCase(),pw=$('#c_pw').value||'';lastEmail=em;
