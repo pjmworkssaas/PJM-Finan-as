@@ -234,6 +234,11 @@ body.gate-on .fab{display:none!important}
   body.menu-open{overflow:hidden}
   body.menu-open .side{z-index:100}
 }
+
+.scopebar{display:none}.scopebar.on{display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:3px}
+.scopebar button{flex:1;border:0;background:transparent;color:var(--muted);padding:7px 6px;border-radius:9px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.scopebar button.on{background:var(--primary);color:#fff}
+@media(max-width:720px){.scopebar.on{order:3;width:100%;margin-top:8px}}
 @media print{#tabs,.noprint,.btn,header,#stor{display:none!important}body{background:#fff}.card{box-shadow:none;break-inside:avoid}}
 </style>
 </head>
@@ -242,6 +247,7 @@ body.gate-on .fab{display:none!important}
 <div class="shell" id="shell" style="display:none">
   <aside class="side">
     <div class="brand"><img class="brandimg" src="" id="brandLogo" alt="Fine Gestor"> Fine Gestor</div>
+    <div class="scopebar" id="scopeBar"></div>
     <button class="menubtn" id="menuBtn" type="button" aria-label="Abrir menu" aria-expanded="false" onclick="app.menu()"><span class="bars">☰</span><span id="menuLabel">Menu</span><span id="menuBadge"></span></button>
     <div class="menuback" onclick="app.menu(false)"></div>
     <nav class="tabs" id="tabs"></nav>
@@ -269,7 +275,7 @@ var DOWF=['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira'
 var IN_TYPES={salario:'Salário',transferencia:'Transferência recebida',pagamento:'Pagamento recebido',outro:'Outra entrada'};
 var BILL_CATS={divida:'Dívida',contrato:'Contrato realizado',plano:'Plano contratado',fixa:'Dívida fixa',pontual:'Dívida pontual'};
 var BILL_TABS=[['divida','Dívidas','🏦'],['contrato','Contratos','📄'],['plano','Planos','📦'],['fixa','Fixas','🔁'],['pontual','Pontuais','📌'],['pagos','Pagamentos feitos','✅']];
-var TABS=[['painel','🏠','Painel'],['cal','📅','Calendário'],['entradas','💵','Entradas'],['contas','🧾','Contas'],['quitar','🎯','Quitar dívidas'],['rel','📊','Relatórios'],['buscar','🔍','Buscar'],['calc','🧮','Calculadora'],['cartoes','💳','Cartões'],['bancos','🏦','Bancos'],['poup','🐷','Poupança'],['notif','🔔','Notificações'],['sup','🎧','Suporte']];
+var TABS=[['painel','🏠','Painel'],['cal','📅','Calendário'],['entradas','💵','Entradas'],['contas','🧾','Contas'],['quitar','🎯','Quitar dívidas'],['rel','📊','Relatórios'],['negocio','💼','Meu negócio'],['buscar','🔍','Buscar'],['calc','🧮','Calculadora'],['cartoes','💳','Cartões'],['bancos','🏦','Bancos'],['poup','🐷','Poupança'],['notif','🔔','Notificações'],['sup','🎧','Suporte']];
 var NICON={cadastro:'📝',pagamento:'💸',recebimento:'💰',encerrada:'🔒',concretizada:'✅',marcacao:'📌',alerta:'⚠️',deposito:'🐷',saque:'💸'};
 
 function $(s,r){return (r||document).querySelector(s);}
@@ -340,10 +346,10 @@ function occFor(k,it,upTo){
   return out;
 }
 function byDate(a,b){return a.date<b.date?-1:a.date>b.date?1:(a.item.nome<b.item.nome?-1:1);}
-function buildOcc(k,upTo){
+function buildOcc(k,upTo,all){
   var out=[];
-  listOf(k).forEach(function(it){out=out.concat(occFor(k,it,upTo));});
-  if(k==='out')out=out.concat(cdOcc(upTo));
+  listOf(k).forEach(function(it){if(all||inScope(it))out=out.concat(occFor(k,it,upTo));});
+  if(k==='out'&&(all||!modoOn()||(db.settings.visao||'tudo')!=='negocio'))out=out.concat(cdOcc(upTo));
   return out.sort(byDate);
 }
 function nextOcc(k,it){
@@ -372,7 +378,7 @@ function doneLabel(k,it){
 }
 function alertSummary(){
   var up=addDays(todayISO(),db.settings.alertDays);
-  var all=buildOcc('in',up).concat(buildOcc('out',up)).filter(function(o){return !o.rec;}).sort(byDate);
+  var all=buildOcc('in',up,true).concat(buildOcc('out',up,true)).filter(function(o){return !o.rec;}).sort(byDate);
   return {
     late:all.filter(function(o){return o.status==='late';}),
     today:all.filter(function(o){return o.status==='today';}),
@@ -556,7 +562,7 @@ function itemForm(k,id,preset){
     fld('Repetição','<select id="f_rec"><option value="mensal"'+(v.recorrencia==='mensal'?' selected':'')+'>Todo mês</option><option value="unica"'+(v.recorrencia!=='mensal'?' selected':'')+'>Uma vez só</option></select>')+
     '<div id="w_parc">'+fld(out?'Nº de parcelas':'Nº de recebimentos','<input id="f_parc" type="number" min="0" value="'+(v.parcelas||'')+'">','Deixe vazio se não tem fim (aluguel, planos…).')+'</div>'+
     (it?'':'<div id="w_ja">'+fld(out?'Parcelas já pagas':'Já recebidos','<input id="f_ja" type="number" min="0" value="0">','Contando a partir da 1ª parcela.')+'</div><div id="w_jac"><label class="chk"><input type="checkbox" id="f_jac"> '+(out?'Já foi pago':'Já foi recebido')+'</label></div>')+
-    '</div>'+fld('Observações','<textarea id="f_obs" rows="2">'+esc(v.obs)+'</textarea>');
+    '</div>'+escField(v)+fld('Observações','<textarea id="f_obs" rows="2">'+esc(v.obs)+'</textarea>');
   var title=(it?'Editar ':'Novo ')+(out?'lançamento de saída':'lançamento de entrada');
   modal(title,body,[{label:'Cancelar'},{label:it?'Salvar alterações':'Cadastrar',cls:'primary',fn:function(){
     var tipo=$('#f_tipo').value,nome=$('#f_nome').value.trim(),parte=$('#f_parte').value.trim();
@@ -568,7 +574,7 @@ function itemForm(k,id,preset){
     if(!data)return showErr('Informe a data.');
     if(!it){
       var o={id:uid(),nome:nome,parte:parte,valor:valor,data:data,recorrencia:rec,parcelas:parc,obs:obs,encerrada:false};
-      o[tk]=tipo;listOf(k).push(o);
+      o[tk]=tipo;o.escopo=$('#f_esc')?$('#f_esc').value:'pessoal';listOf(k).push(o);
       var ja=0;
       if(rec==='mensal'){ja=Math.max(0,parseInt($('#f_ja').value,10)||0);if(parc>0)ja=Math.min(ja,parc);}
       else if($('#f_jac').checked)ja=1;
@@ -576,7 +582,7 @@ function itemForm(k,id,preset){
       notify('cadastro',out?'Conta cadastrada':'Entrada cadastrada',nome+' · '+brl(valor)+(rec==='mensal'?(parc>0?' · '+parc+'x':' · mensal'):' · uma vez'));
       if(ja>0)afterRec(k,o);
     }else{
-      it[tk]=tipo;it.nome=nome;it.parte=parte;it.valor=valor;it.data=data;it.recorrencia=rec;it.parcelas=parc;it.obs=obs;
+      if($('#f_esc'))it.escopo=$('#f_esc').value;it[tk]=tipo;it.nome=nome;it.parte=parte;it.valor=valor;it.data=data;it.recorrencia=rec;it.parcelas=parc;it.obs=obs;
       notify('cadastro','Cadastro atualizado',nome);
     }
     save();render();
@@ -598,7 +604,7 @@ function itemForm(k,id,preset){
 /* ---------- componentes de tela ---------- */
 function occRow(o){
   var it=o.item;var inn=o.kind==='in';var d=parseD(o.date);
-  var sub=esc(inn?IN_TYPES[it.tipo]:(BILL_CATS[it.categoria]||it.categoria));
+  var sub=esc(inn?IN_TYPES[it.tipo]:(BILL_CATS[it.categoria]||it.categoria))+(modoOn()&&it.escopo==='negocio'?' · 💼 Negócio':'');
   if(it.recorrencia==='mensal')sub+=it.parcelas>0?' · parcela '+o.n+'/'+it.parcelas:' · mensal';
   if(it.parte)sub+=' · '+esc(it.parte);
   var val=o.rec?o.rec.valor:it.valor;
@@ -742,8 +748,8 @@ function relAno(){
   return h;
 }
 function viewRel(){
-  var bar='<div class="btnrow noprint" style="margin-bottom:10px"><button class="btn sm'+(relMode==='mes'?' primary':'')+'" onclick="app.relMode(\'mes\')">Mensal</button><button class="btn sm'+(relMode==='ano'?' primary':'')+'" onclick="app.relMode(\'ano\')">Anual</button></div>';
-  return bar+(relMode==='ano'?relAno():viewRelMes());
+  var bar='<div class="btnrow noprint" style="margin-bottom:10px"><button class="btn sm'+(relMode==='mes'?' primary':'')+'" onclick="app.relMode(\'mes\')">Mensal</button><button class="btn sm'+(relMode==='ano'?' primary':'')+'" onclick="app.relMode(\'ano\')">Anual</button>'+(modoOn()?'<button class="btn sm'+(relMode==='contador'?' primary':'')+'" onclick="app.relMode(\'contador\')">Contador</button>':'')+'</div>';
+  return bar+(relMode==='contador'&&modoOn()?relContador():relMode==='ano'?relAno():viewRelMes());
 }
 function exportForDB(){
   var tables={};Object.keys(db).forEach(function(k){if(Array.isArray(db[k]))tables[k]=db[k];});
@@ -891,6 +897,7 @@ function quickExpense(){
     '<div class="grid2">'+fld('Valor','<input id="qe_val" inputmode="decimal" placeholder="0,00">')+fld('Data','<input id="qe_data" type="date" value="'+todayISO()+'">')+'</div>'+
     fld('Categoria','<select id="qe_cat">'+Object.keys(BILL_CATS).map(function(k){return '<option value="'+k+'"'+(k==='pontual'?' selected':'')+'>'+esc(BILL_CATS[k])+'</option>';}).join('')+db.cats.map(function(n){return '<option value="x:'+esc(n)+'">'+esc(n)+'</option>';}).join('')+'<option value="__new">➕ Nova categoria…</option></select>')+
     '<div id="qe_nw" style="display:none">'+fld('Nome da nova categoria','<input id="qe_newcat" placeholder="Ex.: Mercado, Lazer, Transporte">')+'</div>'+
+    (modoOn()?fld('Pertence a','<select id="qe_esc"><option value="pessoal">👤 Pessoal</option><option value="negocio"'+((db.settings.visao||'tudo')==='negocio'?' selected':'')+'>💼 Negócio</option></select>','Gastos no cartão de crédito contam como pessoais.'):'')+
     fld('Pago com','<select id="qe_how"><option value="">Dinheiro / sem vínculo</option>'+db.accounts.map(function(a){return '<option value="a:'+a.id+'">🏦 '+esc(a.nome)+'</option>';}).join('')+db.cards.map(function(c){return '<option value="c:'+c.id+'">💳 '+esc(c.nome)+' (crédito)</option>';}).join('')+'</select>');
   modal('Lançar gasto',body,[{label:'Cancelar'},{label:'Lançar',cls:'primary',fn:function(){
     var d=$('#qe_desc').value.trim(),v=toNum($('#qe_val').value),dt=$('#qe_data').value,cat=$('#qe_cat').value,how=$('#qe_how').value;
@@ -904,7 +911,7 @@ function quickExpense(){
       db.cardTx.push({id:uid(),cardId:c.id,desc:d,valor:v,parcelas:1,data:dt});cdMonth=cdInvYM(c,dt);
       notify('cadastro','Gasto lançado no cartão',c.nome+' · '+d+' · '+brl(v));save();render();return;
     }
-    var o={id:uid(),nome:d,parte:'',valor:v,data:dt,recorrencia:'unica',parcelas:0,obs:'',encerrada:false,categoria:cat};
+    var o={id:uid(),nome:d,parte:'',valor:v,data:dt,recorrencia:'unica',parcelas:0,obs:'',encerrada:false,categoria:cat,escopo:($('#qe_esc')?$('#qe_esc').value:'pessoal')};
     db.bills.push(o);registerRec('out',o.id,1,dt,v,'',how.charAt(0)==='a'?how.slice(2):'');
   }}],function(root){$('#qe_cat',root).addEventListener('change',function(){$('#qe_nw',root).style.display=this.value==='__new'?'block':'none';});});
 }
@@ -955,7 +962,7 @@ var PRIV_HTML=[
 '<p><b>Quais dados são tratados.</b> (a) Dados da conta: e-mail e senha (armazenada de forma protegida). (b) Dados que você cadastra no programa: entradas, contas, cartões, bancos, poupanças e anotações. (c) Dados da compra: nome, e-mail e WhatsApp informados no pagamento, valor e forma de pagamento.</p>',
 '<p><b>Para que usamos.</b> Para criar e manter a sua conta, validar a sua licença, sincronizar os seus dados entre aparelhos, enviar a chave de ativação, prestar suporte e cumprir obrigações legais. Não vendemos seus dados e não os usamos para publicidade.</p>',
 '<p><b>Onde ficam.</b> Os dados da conta e do programa ficam em servidores de nuvem (Supabase), com acesso restrito a cada usuário, e uma cópia fica no seu aparelho. O pagamento é feito no Mercado Pago, e nós não armazenamos dados de cartão.</p>',
-'<p><b>Com quem compartilhamos.</b> Apenas com prestadores necessários ao serviço: hospedagem e banco de dados (Supabase), processamento do servidor da loja (Cloudflare), pagamento (Mercado Pago) e a ferramenta de mensagens usada pela equipe para ser avisada de novas compras. Podemos compartilhar dados quando a lei exigir.</p>',
+'<p><b>Com quem compartilhamos.</b> Apenas com prestadores necessários ao serviço: hospedagem e banco de dados (Supabase), processamento do servidor da loja (Cloudflare), pagamento (Mercado Pago) e a ferramenta de mensagens usada pela equipe para ser avisada de novas compras. Se você ativar os alertas por Telegram (opcional), enviaremos ao seu Telegram um resumo dos seus vencimentos, com nomes e valores das contas; o Telegram trata esses dados conforme a política dele, e você pode desligar quando quiser. Podemos compartilhar dados quando a lei exigir.</p>',
 '<p><b>Por quanto tempo.</b> Mantemos os dados enquanto a sua conta existir. Ao pedir a exclusão, apagamos os dados da conta, salvo o que a lei exigir guardar, como registros de compra.</p>',
 '<p><b>Seus direitos (LGPD).</b> Você pode confirmar o tratamento, acessar, corrigir, exportar e pedir a exclusão dos seus dados, e revogar consentimentos. Você pode exportar tudo em ⚙️ e excluir a sua conta por conta própria em ⚙️ → Conta e nuvem. Para os demais direitos, use a aba Suporte do programa.</p>',
 '<p><b>Alterações.</b> Se esta política mudar, avisaremos no programa antes de a mudança valer.</p>'].join('');
@@ -1253,7 +1260,7 @@ function viewEntradas(){
   h+='</div>'+monthNav();
   h+='<div class="filters">'+['todos'].concat(Object.keys(IN_TYPES)).map(function(k){return '<button class="fchip'+(ui.inFilter===k?' on':'')+'" onclick="app.setInFilter(\''+k+'\')">'+(k==='todos'?'Todos':IN_TYPES[k])+'</button>';}).join('')+'</div>';
   h+=occ.length?'<div class="list">'+occ.map(occRow).join('')+'</div>':'<div class="empty">Sem entradas neste mês'+(ui.inFilter==='todos'?'':' para este tipo')+'.</div>';
-  var cad=db.incomes.filter(function(x){return ui.inFilter==='todos'||x.tipo===ui.inFilter;});
+  var cad=db.incomes.filter(function(x){return (ui.inFilter==='todos'||x.tipo===ui.inFilter)&&inScope(x);});
   h+='<h2 class="sec">Cadastros de entrada</h2>';
   h+=cad.length?'<div class="list">'+cad.map(function(x){return itemCard('in',x);}).join('')+'</div>':'<div class="empty">Nenhuma entrada cadastrada ainda. Cadastre salário, transferências e pagamentos que você recebe.</div>';
   return h;
@@ -1261,12 +1268,12 @@ function viewEntradas(){
 
 function viewContas(){
   var h='<div class="subtabs">'+BILL_TABS.map(function(t){
-    var c=t[0]==='pagos'?db.payments.length:db.bills.filter(function(b){return b.categoria===t[0];}).length;
+    var c=t[0]==='pagos'?db.payments.length:db.bills.filter(function(b){return b.categoria===t[0]&&inScope(b);}).length;
     return '<button class="fchip'+(ui.billTab===t[0]?' on':'')+'" onclick="app.setBillTab(\''+t[0]+'\')">'+t[2]+' '+t[1]+' ('+c+')</button>';
   }).join('')+'</div>';
   if(ui.billTab==='pagos')return h+viewPagos();
   var cat=ui.billTab;var label=BILL_CATS[cat];
-  var list=db.bills.filter(function(b){return b.categoria===cat;});
+  var list=db.bills.filter(function(b){return b.categoria===cat&&inScope(b);});
   var monthly=0,remaining=0;
   list.forEach(function(b){
     var st=itemStats('out',b);
@@ -1325,12 +1332,14 @@ var lastDay=todayISO();
 function renderChrome(){
   var s=alertSummary();var urgent=s.late.length+s.today.length;
   var unread=db.notifs.filter(function(n){return !n.read;}).length;
-  $('#tabs').innerHTML=TABS.map(function(t){
+  $('#tabs').innerHTML=TABS.filter(function(t){return t[0]!=='negocio'||modoOn();}).map(function(t){
     var b='';
     if(t[0]==='painel'&&urgent)b='<span class="tb red">'+urgent+'</span>';
     if(t[0]==='notif'&&unread)b='<span class="tb">'+unread+'</span>';
     return '<button class="tab'+(ui.tab===t[0]?' on':'')+'" onclick="app.go(\''+t[0]+'\')">'+t[1]+' '+t[2]+b+'</button>';
   }).join('');
+  var sbar=$('#scopeBar');
+  if(sbar){if(modoOn()){var vz=db.settings.visao||'tudo';sbar.className='scopebar on';sbar.innerHTML=[['tudo','Tudo'],['pessoal','👤 Pessoal'],['negocio','💼 Negócio']].map(function(x){return '<button class="'+(vz===x[0]?'on':'')+'" onclick="app.scope(\''+x[0]+'\')">'+x[1]+'</button>';}).join('');}else{sbar.className='scopebar';sbar.innerHTML='';}}
   var cur=TABS.filter(function(t){return t[0]===ui.tab;})[0];
   $('#menuLabel').textContent=cur?cur[1]+' '+cur[2]:'Menu';
   $('#menuBadge').innerHTML=(urgent+unread)?'<span class="tb red">'+(urgent+unread)+'</span>':'';
@@ -1338,7 +1347,7 @@ function renderChrome(){
   document.title=(urgent?'('+urgent+') ':'')+'Fine Gestor';
 }
 function render(){
-  var v={painel:viewPainel,quitar:viewQuitar,rel:viewRel,buscar:viewBuscar,bancos:viewBancos,cartoes:viewCartoes,cal:viewCal,entradas:viewEntradas,contas:viewContas,calc:viewCalc,poup:viewPoupanca,notif:viewNotif,sup:viewSuporte}[ui.tab];
+  var v={painel:viewPainel,negocio:viewNegocio,quitar:viewQuitar,rel:viewRel,buscar:viewBuscar,bancos:viewBancos,cartoes:viewCartoes,cal:viewCal,entradas:viewEntradas,contas:viewContas,calc:viewCalc,poup:viewPoupanca,notif:viewNotif,sup:viewSuporte}[ui.tab];
   $('#main').innerHTML=v();
   if(ui.tab==='calc')wireCalc();
   if(ui.tab==='notif'&&db.notifs.some(function(n){return !n.read;})){db.notifs.forEach(function(n){n.read=true;});save();}
@@ -1606,7 +1615,10 @@ function loadSample(){
 function settingsModal(){
   var s=db.settings;var canN='Notification' in window;
   var body='<div class="err" id="ferr"></div>'+
-    (cloudOn()&&cSession()?'<div class="setblock"><h4>☁️ Conta e nuvem</h4><p class="small muted" style="margin-top:0">Conta: <b>'+esc(cSession().user.email)+'</b><br>Sincronização: '+syncLabel()+'</p><div class="btnrow"><button class="btn" id="b_sync">Sincronizar agora</button><button class="btn" id="b_out">Sair da conta</button><button class="btn danger" id="b_del">Excluir minha conta</button></div></div>':'')+
+    '<div class="setblock"><h4>💼 Perfil de uso</h4><p class="small muted" style="margin-top:0">Com MEI ou Autônomo você separa o que é pessoal do que é do negócio e ganha o relatório para o contador.</p>'+
+    '<select id="s_modo" onchange="app.setModo(this.value)"><option value="pessoal"'+((s.modo||'pessoal')==='pessoal'?' selected':'')+'>Só pessoal</option><option value="mei"'+(s.modo==='mei'?' selected':'')+'>MEI</option><option value="autonomo"'+(s.modo==='autonomo'?' selected':'')+'>Autônomo</option></select>'+
+    (s.modo==='mei'?fld('Limite anual de faturamento do MEI','<input id="s_lim" inputmode="decimal" value="'+fmtNum(Number(s.limiteMei)||81000)+'" onchange="app.setLimite(this.value)">','Padrão: R$ 81.000. No ano de abertura o limite é proporcional aos meses de atividade.'):'')+'</div>'+
+    (cloudOn()&&cSession()?'<div class="setblock"><h4>☁️ Conta e nuvem</h4><p class="small muted" style="margin-top:0">Conta: <b>'+esc(cSession().user.email)+'</b><br>Sincronização: '+syncLabel()+'</p><div class="btnrow"><button class="btn" id="b_sync">Sincronizar agora</button><button class="btn" id="b_alert">🔔 Alertas por Telegram</button><button class="btn" id="b_out">Sair da conta</button><button class="btn danger" id="b_del">Excluir minha conta</button></div></div>':'')+
     '<div class="setblock"><h4>🔑 Licença e acesso</h4><p class="small muted" style="margin-top:0">'+(cloudOn()?'Licença: <b>ativa</b>':'Chave ativada: <span class="mono">'+esc(s.licenseKey||'—')+'</span>')+'</p>'+
     fld('Senha de acesso','<input id="s_pin" type="password" placeholder="'+(s.pinHash?'Deixe em branco para manter a atual':'Nenhuma definida — opcional')+'">','Deixe em branco para não alterar. Para remover, digite REMOVER.')+'</div>'+
     '<div class="setblock"><h4>🔔 Alertas e aparência</h4><div class="setgrid">'+
@@ -1640,7 +1652,7 @@ function settingsModal(){
     $('#b_json',root).addEventListener('click',exportJSON);
     $('#b_csv',root).addEventListener('click',exportCSV);
     $('#b_ics',root).addEventListener('click',exportICS);$('#b_db',root).addEventListener('click',exportForDB);$('#b_tut',root).addEventListener('click',function(){closeModal();onboard();});$('#b_terms',root).addEventListener('click',function(){legalModal('t');});$('#b_priv',root).addEventListener('click',function(){legalModal('p');});
-    if($('#b_sync',root)){$('#b_sync',root).addEventListener('click',function(){cSyncNow(this);});$('#b_out',root).addEventListener('click',function(){closeModal();cSignOut();});$('#b_del',root).addEventListener('click',function(){closeModal();cDeleteAccount();});}
+    if($('#b_sync',root)){$('#b_sync',root).addEventListener('click',function(){cSyncNow(this);});$('#b_alert',root).addEventListener('click',function(){closeModal();cAlertModal();});$('#b_out',root).addEventListener('click',function(){closeModal();cSignOut();});$('#b_del',root).addEventListener('click',function(){closeModal();cDeleteAccount();});}
     $('#b_stmt',root).addEventListener('click',function(){closeModal();importStatementModal();});
     $('#b_sample',root).addEventListener('click',function(){closeModal();loadSample();});
     $('#b_clear',root).addEventListener('click',function(){
@@ -1748,6 +1760,7 @@ function cEnter(){
   db.settings.activated=true;
   var t=new Promise(function(res){setTimeout(res,6000);});
   Promise.race([cPull().catch(function(){}),t]).then(function(){
+    setTimeout(cAgendaPush,3000);
     if(db.settings.pinHash)renderLock();else startApp();
   });
 }
@@ -1765,6 +1778,7 @@ function cloudDirty(){
   if(!cloudOn()||cloudApplying||!cSession())return;
   var m=syncMeta();m.dirty=true;lsSet(SYNC_K,m);chg++;
   clearTimeout(pushTimer);pushTimer=setTimeout(function(){cPush();},2500);
+  clearTimeout(agTimer);agTimer=setTimeout(cAgendaPush,6000);
 }
 function cConflict(row){
   return new Promise(function(res){
@@ -1817,6 +1831,57 @@ function cDeleteAccount(){
     }).catch(function(){showErr('Sem conexão. Tente novamente.');});
     return false;
   }}]);
+}
+/* ---------- alertas de vencimento por Telegram (cliente) ---------- */
+var agTimer=null;
+function agendaBuild(){
+  var t=todayISO(),from=addDays(t,-60),to=addDays(t,35),it=[];
+  ['in','out'].forEach(function(k){buildOcc(k,to,true).forEach(function(o){if(o.rec||o.date<from)return;it.push({d:o.date,k:k,n:o.item.nome,v:Number(o.item.valor)});});});
+  it.sort(function(a,b){return a.d<b.d?-1:a.d>b.d?1:0;});
+  return {v:1,items:it.slice(0,120)};
+}
+function cAgendaPush(){
+  var s=cSession();if(!s||!cloudOn()||!lsGet('fg-alerts'))return Promise.resolve();
+  return cToken().then(function(t){return cReq('/rest/v1/alert_prefs?user_id=eq.'+s.user.id,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({agenda:agendaBuild(),agenda_at:new Date().toISOString()})},t);}).catch(function(){});
+}
+function cAlertModal(){
+  if(!CLOUD.bot||String(CLOUD.bot).indexOf('COLE')===0)return modal('Alertas por Telegram','<p>Este recurso ainda não está disponível. Tente novamente mais tarde.</p>',[{label:'Fechar'}]);
+  modal('🔔 Alertas por Telegram','<div id="al_body"><p class="muted">Carregando…</p></div>',[{label:'Fechar'}]);
+  alLoad();
+}
+function alLoad(){
+  var s=cSession();if(!s)return;
+  cToken().then(function(t){return cReq('/rest/v1/alert_prefs?select=enabled,chat_id,hora,dias&user_id=eq.'+s.user.id,{},t);}).then(function(r){
+    var p=(r.json&&r.json[0])||{enabled:false,chat_id:null,hora:8,dias:3};lsSet('fg-alerts',p.chat_id&&p.enabled?1:null);alRender(p);
+  }).catch(function(){var b=$('#al_body');if(b)b.innerHTML='<p>Sem conexão. Tente de novo.</p>';});
+}
+function alRender(p){
+  var b=$('#al_body');if(!b)return;
+  if(!p.chat_id){
+    b.innerHTML='<p>Receba todo dia, no Telegram, um resumo do que vence e do que está atrasado, mesmo sem abrir o programa.</p><p class="small muted">Você precisa ter o Telegram. Toque em Conectar, depois em <b>Iniciar</b> no Telegram e volte aqui.</p><div class="btnrow"><button class="btn primary" onclick="app.alConnect()">Conectar Telegram</button><button class="btn" onclick="app.alReload()">Já conectei · atualizar</button></div><div class="err" id="al_err"></div>';return;
+  }
+  var h='',i;for(i=5;i<=22;i++)h+='<option value="'+i+'"'+(Number(p.hora)===i?' selected':'')+'>'+pad(i)+':00</option>';
+  var d='',j;for(j=0;j<=7;j++)d+='<option value="'+j+'"'+(Number(p.dias)===j?' selected':'')+'>'+(j===0?'só hoje':j+(j===1?' dia':' dias'))+'</option>';
+  b.innerHTML='<p>✅ Telegram conectado.</p><label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" id="al_on"'+(p.enabled?' checked':'')+'> <span>Receber o resumo diário</span></label>'+fld('Horário do resumo','<select id="al_h">'+h+'</select>','Horário de Brasília.')+fld('Avisar os vencimentos dos próximos','<select id="al_d">'+d+'</select>')+
+    '<div class="btnrow"><button class="btn primary" onclick="app.alSave()">Salvar</button><button class="btn danger" onclick="app.alOff()">Desconectar</button></div><div class="err" id="al_err"></div><p class="small muted">O resumo usa os dados da última sincronização. Para parar, também dá para enviar /parar ao bot.</p>';
+}
+function alConnect(){
+  cToken().then(function(t){return cReq('/rest/v1/rpc/telegram_link_code',{method:'POST',body:'{}'},t);}).then(function(r){
+    var code=r.ok&&typeof r.json==='string'?r.json:null,e=$('#al_err');
+    if(!code){if(e)e.textContent='Não foi possível gerar o código agora. Confira se sua licença está ativa e tente de novo.';return;}
+    window.open('https://t.me/'+CLOUD.bot+'?start='+code,'_blank');
+    if(e)e.textContent='No Telegram, toque em Iniciar. Depois volte aqui e clique em “Já conectei”.';
+  }).catch(function(){var e=$('#al_err');if(e)e.textContent='Sem conexão. Tente de novo.';});
+}
+function alSave(){
+  var s=cSession(),body={user_id:s.user.id,enabled:!!$('#al_on').checked,hora:Number($('#al_h').value),dias:Number($('#al_d').value)};
+  cToken().then(function(t){return cReq('/rest/v1/alert_prefs',{method:'POST',headers:{Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(body)},t);}).then(function(r){
+    var e=$('#al_err');if(!r.ok){if(e)e.textContent='Não foi possível salvar agora.';return;}
+    lsSet('fg-alerts',body.enabled?1:null);cAgendaPush();if(e){e.style.color='var(--green)';e.textContent='Salvo ✓';}
+  }).catch(function(){var e=$('#al_err');if(e)e.textContent='Sem conexão.';});
+}
+function alOff(){
+  cToken().then(function(t){return cReq('/rest/v1/rpc/telegram_unlink',{method:'POST',body:'{}'},t);}).then(function(){lsSet('fg-alerts',null);alLoad();}).catch(function(){});
 }
 function cSignOut(){
   function out(){try{localStorage.removeItem(KEY);[AUTH_K,LIC_K,SYNC_K].forEach(function(k){localStorage.removeItem(k);});}catch(e){}location.reload();}
@@ -1904,8 +1969,94 @@ function qImport(){
       save();render();
     }}]);
 }
+/* ---------- perfil MEI / autônomo: pessoal × negócio ---------- */
+var bizYear=Number(todayISO().slice(0,4));
+function modoOn(){return (db.settings.modo||'pessoal')!=='pessoal';}
+function inScope(it){var v=db.settings.visao||'tudo';if(!modoOn()||v==='tudo')return true;return (it.escopo||'pessoal')===v;}
+function escField(v){
+  if(!modoOn())return '';
+  var cur=v.escopo||((db.settings.visao||'tudo')==='negocio'?'negocio':'pessoal');
+  return fld('Pertence a','<select id="f_esc"><option value="pessoal"'+(cur==='pessoal'?' selected':'')+'>👤 Pessoal</option><option value="negocio"'+(cur==='negocio'?' selected':'')+'>💼 Negócio</option></select>');
+}
+function bizRecs(year){
+  var y=String(year),up=year+'-12-31',rin=[],rout=[];
+  function isBiz(o){return !o.item.card&&(o.item.escopo||'pessoal')==='negocio'&&o.rec&&String(o.rec.dataReal).slice(0,4)===y;}
+  buildOcc('in',up,true).forEach(function(o){if(isBiz(o))rin.push(o);});
+  buildOcc('out',up,true).forEach(function(o){if(isBiz(o))rout.push(o);});
+  return {rin:rin,rout:rout};
+}
+function bizAgg(b){
+  var m=[],i,tin=0,tout=0;for(i=0;i<12;i++)m.push({in:0,out:0});
+  b.rin.forEach(function(o){var v=Number(o.rec.valor);m[Number(String(o.rec.dataReal).slice(5,7))-1].in+=v;tin+=v;});
+  b.rout.forEach(function(o){var v=Number(o.rec.valor);m[Number(String(o.rec.dataReal).slice(5,7))-1].out+=v;tout+=v;});
+  return {m:m,tin:tin,tout:tout,rin:b.rin,rout:b.rout};
+}
+function bizStats(year){return bizAgg(bizRecs(year));}
+function nextDay20(from){var p=from.split('-').map(Number),y=p[0],m=p[1];if(p[2]>20){m++;if(m>12){m=1;y++;}}return y+'-'+pad(m)+'-20';}
+function limitInfo(tin,limite,mesesDecorridos){
+  var pct=limite>0?tin/limite:0,proj=mesesDecorridos>0?tin/mesesDecorridos*12:0,msg,cor;
+  if(pct>=1.2){msg='Você passou mais de 20% do limite. O desenquadramento pode retroagir ao início do ano: fale já com seu contador.';cor='red';}
+  else if(pct>=1){msg='Você passou do limite. Até 20% acima, paga-se um DAS complementar e vira microempresa no ano seguinte. Confirme com seu contador.';cor='red';}
+  else if(pct>=0.8){msg='Atenção: você já usou mais de 80% do limite anual.';cor='orange';}
+  else{msg='Dentro do limite.';cor='green';}
+  return {pct:pct,proj:proj,msg:msg,cor:cor,resta:Math.max(0,limite-tin)};
+}
+function dlText(name,text,mime){var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:mime||'text/csv;charset=utf-8'}));a.download=name;document.body.appendChild(a);a.click();setTimeout(function(){a.remove();},500);}
+function num2(v){return Number(v).toFixed(2).replace('.',',');}
+function bizCsv(){
+  var y=relYear,b=bizStats(y),rows=[['Tipo','Data','Descrição','Origem/Credor','Categoria','Valor (R$)']];
+  b.rin.forEach(function(o){rows.push(['Receita',fmtDate(o.rec.dataReal),o.item.nome,o.item.parte||'',IN_TYPES[o.item.tipo]||'',num2(o.rec.valor)]);});
+  b.rout.forEach(function(o){rows.push(['Despesa',fmtDate(o.rec.dataReal),o.item.nome,o.item.parte||'',BILL_CATS[o.item.categoria]||o.item.categoria||'',num2(o.rec.valor)]);});
+  rows.push([],['Total receitas','','','','',num2(b.tin)],['Total despesas','','','','',num2(b.tout)],['Resultado','','','','',num2(b.tin-b.tout)]);
+  dlText('livro-caixa-'+y+'.csv','\ufeff'+rows.map(function(r){return r.map(function(c){return '"'+String(c).replace(/"/g,'""')+'"';}).join(';');}).join('\r\n'));
+}
+function limiteBox(tin,y){
+  var lim=Number(db.settings.limiteMei)||81000,now=new Date(),md=(y===now.getFullYear())?now.getMonth()+1:12,li=limitInfo(tin,lim,md);
+  return '<div class="card" style="margin:12px 0"><div class="lb">Limite anual do MEI</div><div class="vl" style="font-size:20px">'+brl(tin)+' <span class="muted" style="font-size:14px">de '+brl(lim)+'</span></div>'+
+    '<div style="height:10px;border-radius:6px;background:var(--border);overflow:hidden;margin:8px 0"><i style="display:block;height:100%;width:'+Math.min(100,Math.round(li.pct*100))+'%;background:var(--'+li.cor+')"></i></div>'+
+    '<div class="small" style="color:var(--'+li.cor+')"><b>'+Math.round(li.pct*100)+'%</b> · '+li.msg+'</div>'+
+    '<div class="small muted" style="margin-top:4px">Ainda cabem '+brl(li.resta)+' no ano'+(y===now.getFullYear()&&md>=2?' · no ritmo atual você chega a '+brl(li.proj)+' no ano':'')+'. O limite considera a receita bruta, sem descontar despesas. No ano de abertura o limite é proporcional aos meses de atividade (ajuste o valor em ⚙️).</div></div>';
+}
+function viewNegocio(){
+  var y=bizYear,b=bizStats(y),mei=db.settings.modo==='mei';
+  var h='<div class="sechead"><h2 class="sec" style="margin-top:0">💼 Meu negócio</h2><div class="btnrow"><button class="btn sm" onclick="app.bizYr(-1)">◀</button><b>'+y+'</b><button class="btn sm" onclick="app.bizYr(1)">▶</button><button class="btn primary" onclick="app.relContador()">Relatório para o contador</button></div></div>';
+  h+='<div class="cards"><div class="card"><div class="lb">Receita recebida</div><div class="vl pos">'+brl(b.tin)+'</div><div class="sub">no ano, só do negócio</div></div><div class="card"><div class="lb">Despesas pagas</div><div class="vl neg">'+brl(b.tout)+'</div><div class="sub">no ano, só do negócio</div></div><div class="card"><div class="lb">Resultado</div><div class="vl '+(b.tin-b.tout<0?'neg':'pos')+'">'+brl(b.tin-b.tout)+'</div><div class="sub">receitas − despesas</div></div></div>';
+  if(mei){
+    h+=limiteBox(b.tin,y);
+    var das=db.bills.filter(function(x){return (x.escopo||'')==='negocio'&&/^DAS/i.test(x.nome)&&!x.encerrada;})[0],now=todayISO(),may=(now.slice(5)>'05-31'?Number(now.slice(0,4))+1:Number(now.slice(0,4)))+'-05-31';
+    h+='<div class="card" style="margin-bottom:12px"><div class="lb">DAS mensal</div>'+(das?'<div class="vl" style="font-size:18px">'+esc(das.nome)+' · '+brl(das.valor)+'</div><div class="sub">Já está nas suas contas. Vence todo dia 20 (no próximo dia útil se cair em fim de semana ou feriado). Se o valor mudar, edite em Contas.</div>':
+      '<div class="sub">Crie um lembrete mensal para não esquecer o DAS (vence todo dia 20). O valor depende da sua atividade.</div><div class="acts"><button class="btn primary" onclick="app.dasNew()">Criar lembrete do DAS</button></div>')+'</div>';
+    h+='<div class="card"><div class="lb">Declaração anual (DASN-SIMEI)</div><div class="sub">Entrega até <b>'+fmtDate(may)+'</b> ('+diffDays(may,now)+' dias), informando a receita do ano anterior. É obrigatória mesmo sem faturamento. Use o relatório para o contador como base.</div></div>';
+  }else h+='<div class="card"><div class="lb">Livro caixa</div><div class="sub">O relatório para o contador reúne tudo que o seu negócio recebeu e pagou no ano, mês a mês, pronto para PDF ou planilha.</div></div>';
+  return h;
+}
+function dasNew(){
+  modal('Lembrete do DAS','<div class="err" id="ferr"></div><p class="small muted">Informe o valor do DAS da sua atividade (aparece na guia emitida no app MEI ou no Portal do Simples Nacional). Vamos criar uma conta mensal do negócio, com vencimento no dia 20.</p>'+fld('Valor do DAS','<input id="das_v" inputmode="decimal" placeholder="0,00">'),[{label:'Cancelar'},{label:'Criar',cls:'primary',fn:function(){
+    var v=toNum($('#das_v').value);if(!(v>0))return showErr('Informe o valor do DAS.');
+    db.bills.push({id:uid(),nome:'DAS MEI',parte:'Receita Federal',valor:v,data:nextDay20(todayISO()),recorrencia:'mensal',parcelas:0,obs:'Vence todo dia 20 (próximo dia útil se cair em fim de semana ou feriado).',encerrada:false,categoria:'fixa',escopo:'negocio'});
+    notify('cadastro','Lembrete do DAS criado',brl(v)+' · todo dia 20');save();render();
+  }}]);
+}
+function relContador(){
+  var y=relYear,b=bizStats(y),mei=db.settings.modo==='mei';
+  var h='<div class="sechead noprint"><h2 class="sec" style="margin-top:0">Relatório para o contador</h2><div class="btnrow"><button class="btn sm" onclick="app.relYr(-1)">◀</button><b>'+y+'</b><button class="btn sm" onclick="app.relYr(1)">▶</button><button class="btn sm" onclick="window.print()">📄 PDF</button><button class="btn sm" onclick="app.bizCsv()">📊 Planilha</button></div></div>'+
+    '<p class="small muted">Somente lançamentos do <b>negócio</b>, por regime de caixa: o que foi efetivamente recebido e pago em '+y+'. É um documento de apoio; confira com seu contador.</p>';
+  h+='<div class="card"><div class="kpis"><div class="kpi"><small>Receita recebida</small><b>'+brl(b.tin)+'</b></div><div class="kpi"><small>Despesas pagas</small><b>'+brl(b.tout)+'</b></div><div class="kpi"><small>Resultado</small><b style="color:var(--'+(b.tin-b.tout<0?'red':'green')+')">'+brl(b.tin-b.tout)+'</b></div></div></div>';
+  if(mei)h+=limiteBox(b.tin,y);
+  h+='<div class="card"><h3 style="margin-top:0">Mês a mês</h3><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap"><thead><tr style="text-align:left;color:var(--muted)"><th>Mês</th><th>Receitas</th><th>Despesas</th><th>Resultado</th></tr></thead><tbody>'+
+    b.m.map(function(m,i){var r=m.in-m.out;return '<tr><td>'+MESES[i]+'</td><td>'+brl(m.in)+'</td><td>'+brl(m.out)+'</td><td style="color:var(--'+(r<0?'red':'green')+')">'+brl(r)+'</td></tr>';}).join('')+
+    '<tr style="font-weight:700;border-top:1px solid var(--border)"><td>Total</td><td>'+brl(b.tin)+'</td><td>'+brl(b.tout)+'</td><td>'+brl(b.tin-b.tout)+'</td></tr></tbody></table></div></div>';
+  function lst(t,arr,isIn){var a=arr.slice().sort(function(x,y2){return x.rec.dataReal<y2.rec.dataReal?-1:1;});
+    return '<div class="card"><h3 style="margin-top:0">'+t+' ('+a.length+')</h3>'+(a.length?'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap"><tbody>'+a.map(function(o){return '<tr><td>'+fmtDate(o.rec.dataReal)+'</td><td>'+esc(o.item.nome)+'</td><td class="muted">'+esc(o.item.parte||'')+'</td><td class="muted">'+esc(isIn?(IN_TYPES[o.item.tipo]||''):(BILL_CATS[o.item.categoria]||o.item.categoria||''))+'</td><td style="text-align:right">'+brl(o.rec.valor)+'</td></tr>';}).join('')+'</tbody></table></div>':'<p class="muted small">Nada no período. Cadastre entradas e contas com “Pertence a: Negócio” e marque como recebidas ou pagas.</p>')+'</div>';}
+  return h+lst('Receitas recebidas',b.rin,true)+lst('Despesas pagas',b.rout,false);
+}
 /* ---------- API pública usada pelos botões ---------- */
 window.app={
+  alConnect:alConnect,alReload:alLoad,alSave:alSave,alOff:alOff,
+  scope:function(v){db.settings.visao=v;save();render();},
+  setModo:function(v){db.settings.modo=v;if(v==='pessoal')db.settings.visao='tudo';if(ui.tab==='negocio'&&v==='pessoal')ui.tab='painel';if(relMode==='contador'&&v==='pessoal')relMode='mes';save();closeModal();render();},
+  setLimite:function(v){var n=toNum(v);if(n>0){db.settings.limiteMei=n;save();}},
+  bizYr:function(n){bizYear+=n;render();},relContador:function(){relMode='contador';ui.tab='rel';render();},bizCsv:bizCsv,dasNew:dasNew,
   qEdit:function(id){qForm(id);},qImport:qImport,
   qDel:function(id){confirmBox('Excluir dívida','Remover esta dívida da simulação? (Isso não apaga nada em Contas.)','Excluir',function(){var P=planOf();P.items=P.items.filter(function(i){return i.id!==id;});save();render();},true);},
   qExtra:function(v){var P=planOf(),n=toNum(v);P.extra=isNaN(n)||n<0?0:n;save();var r=$('#q_res');if(r)r.innerHTML=quitarResults();},
