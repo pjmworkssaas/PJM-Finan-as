@@ -810,7 +810,7 @@ function ticketWhats(t){return 'https://wa.me/'+SUP_WHATS+'?text='+encodeURIComp
 function supRow(t){
   var d=parseD(t.data);
   return '<div class="row st-'+(t.status==='Respondido'?'paid':'pending')+'"><div class="dt"><b>'+pad(d.getDate())+'</b><small>'+MES3[d.getMonth()]+'</small></div>'+
-    '<div class="info"><div class="nm">'+(t.canal==='whatsapp'?'💬 ':'✉️ ')+esc(t.assunto)+'</div><div class="sub">'+esc(t.mensagem)+'</div></div>'+
+    '<div class="info"><div class="nm">'+(t.canal==='whatsapp'?'💬 ':t.canal==='app'?'📨 ':'✉️ ')+esc(t.assunto)+'</div><div class="sub">'+esc(t.mensagem)+'</div></div>'+
     '<div class="amt"></div><div class="stat"><span class="pill st-'+(t.status==='Respondido'?'paid':'pending')+'">'+t.status+'</span></div>'+
     '<div class="act"><button class="btn sm" onclick="app.supToggle(\''+t.id+'\')">'+(t.status==='Respondido'?'Reabrir':'Marcar respondido')+'</button><button class="btn sm danger" onclick="app.supDel(\''+t.id+'\')">Excluir</button></div></div>';
 }
@@ -821,15 +821,26 @@ function viewSuporte(){
     '<h2 class="sec">Abrir chamado</h2>'+
     '<div class="card">'+fld('Assunto','<input id="sp_assunto" placeholder="Ex.: Dúvida sobre o orçamento por categoria">')+
     fld('Mensagem','<textarea id="sp_msg" rows="3" placeholder="Descreva o que você precisa"></textarea>')+
-    fld('Enviar por','<select id="sp_canal"><option value="whatsapp">WhatsApp</option><option value="email">E-mail</option></select>')+
+    fld('Enviar por','<select id="sp_canal">'+(supApiOn()?'<option value="app">Pelo Fine Gestor (resposta por e-mail ou WhatsApp)</option>':'')+'<option value="whatsapp">WhatsApp</option><option value="email">E-mail</option></select>')+
     '<div class="err" id="sp_err"></div><button class="btn primary" onclick="app.supOpen()">Abrir chamado</button></div>'+
     '<h2 class="sec">Histórico de chamados</h2>';
   h+=db.tickets.length?'<div class="list">'+db.tickets.slice().sort(function(a,b){return a.data<b.data?1:-1;}).map(supRow).join('')+'</div>':'<div class="empty">Nenhum chamado aberto ainda.</div>';
   return h;
 }
+function supApiOn(){return cloudOn()&&!!cSession()&&/^https:\/\//.test(String(CLOUD.api||''));}
 function supOpen(){
   var assunto=$('#sp_assunto').value.trim(),msg=$('#sp_msg').value.trim(),canal=$('#sp_canal').value;
   if(!assunto||!msg){$('#sp_err').textContent='Preencha o assunto e a mensagem.';return;}
+  if(canal==='app'){
+    $('#sp_err').textContent='Enviando…';
+    cToken().then(function(tk){return fetch(String(CLOUD.api).replace(/\/+$/,'')+'/suporte',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+tk},body:JSON.stringify({assunto:assunto,mensagem:msg})});})
+    .then(function(r){return r.json().catch(function(){return {};}).then(function(j){return {ok:r.ok,status:r.status,j:j};});})
+    .then(function(x){
+      if(x.ok){db.tickets.push({id:String((x.j&&x.j.id)||uid()),assunto:assunto,mensagem:msg,canal:'app',data:todayISO(),status:'Aberto'});notify('cadastro','Chamado enviado',assunto);save();render();return;}
+      var e=$('#sp_err');if(e)e.textContent=x.status===429?'Você enviou muitos chamados em pouco tempo. Tente de novo mais tarde ou use o WhatsApp.':x.status===403?'Sua licença precisa estar ativa para abrir chamados por aqui. Use o WhatsApp ou o e-mail.':x.status===401?'Sua sessão expirou. Entre de novo ou use o WhatsApp.':'Não foi possível enviar agora. Use o WhatsApp ou o e-mail.';
+    }).catch(function(){var e=$('#sp_err');if(e)e.textContent='Sem conexão. Use o WhatsApp ou o e-mail.';});
+    return;
+  }
   var t={id:uid(),assunto:assunto,mensagem:msg,canal:canal,data:todayISO(),status:'Aberto'};
   db.tickets.push(t);notify('cadastro','Chamado aberto',assunto);save();
   window.open(canal==='whatsapp'?ticketWhats(t):ticketMailto(t),'_blank');
@@ -959,7 +970,7 @@ var TERMS_HTML=[
 '<p><b>6. Disponibilidade.</b> O programa é fornecido no estado em que se encontra, sem garantia de funcionamento ininterrupto. Funções podem ser alteradas ou acrescentadas ao longo do tempo.</p>',
 '<p><b>7. Contato.</b> Dúvidas e solicitações podem ser enviadas pela aba Suporte do próprio programa.</p>'].join('');
 var PRIV_HTML=[
-'<p><b>Quais dados são tratados.</b> (a) Dados da conta: e-mail e senha (armazenada de forma protegida). (b) Dados que você cadastra no programa: entradas, contas, cartões, bancos, poupanças e anotações. (c) Dados da compra: nome, e-mail e WhatsApp informados no pagamento, valor e forma de pagamento.</p>',
+'<p><b>Quais dados são tratados.</b> (a) Dados da conta: e-mail e senha (armazenada de forma protegida). (b) Dados que você cadastra no programa: entradas, contas, cartões, bancos, poupanças e anotações. (c) Dados da compra: nome, e-mail e WhatsApp informados no pagamento, valor e forma de pagamento. (d) Chamados de suporte abertos pelo programa: assunto, mensagem e e-mail da conta, que são apagados junto com a sua conta.</p>',
 '<p><b>Para que usamos.</b> Para criar e manter a sua conta, validar a sua licença, sincronizar os seus dados entre aparelhos, enviar a chave de ativação, prestar suporte e cumprir obrigações legais. Não vendemos seus dados e não os usamos para publicidade.</p>',
 '<p><b>Onde ficam.</b> Os dados da conta e do programa ficam em servidores de nuvem (Supabase), com acesso restrito a cada usuário, e uma cópia fica no seu aparelho. O pagamento é feito no Mercado Pago, e nós não armazenamos dados de cartão.</p>',
 '<p><b>Com quem compartilhamos.</b> Apenas com prestadores necessários ao serviço: hospedagem e banco de dados (Supabase), processamento do servidor da loja (Cloudflare), pagamento (Mercado Pago) e a ferramenta de mensagens usada pela equipe para ser avisada de novas compras. Se você ativar os alertas por Telegram (opcional), enviaremos ao seu Telegram um resumo dos seus vencimentos, com nomes e valores das contas; o Telegram trata esses dados conforme a política dele, e você pode desligar quando quiser. Podemos compartilhar dados quando a lei exigir.</p>',
