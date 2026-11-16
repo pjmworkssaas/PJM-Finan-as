@@ -810,7 +810,7 @@ function ticketWhats(t){return 'https://wa.me/'+SUP_WHATS+'?text='+encodeURIComp
 function supRow(t){
   var d=parseD(t.data);
   return '<div class="row st-'+(t.status==='Respondido'?'paid':'pending')+'"><div class="dt"><b>'+pad(d.getDate())+'</b><small>'+MES3[d.getMonth()]+'</small></div>'+
-    '<div class="info"><div class="nm">'+(t.canal==='whatsapp'?'💬 ':'✉️ ')+esc(t.assunto)+'</div><div class="sub">'+esc(t.mensagem)+'</div></div>'+
+    '<div class="info"><div class="nm">'+(t.canal==='whatsapp'?'💬 ':t.canal==='app'?'📨 ':'✉️ ')+esc(t.assunto)+'</div><div class="sub">'+esc(t.mensagem)+'</div></div>'+
     '<div class="amt"></div><div class="stat"><span class="pill st-'+(t.status==='Respondido'?'paid':'pending')+'">'+t.status+'</span></div>'+
     '<div class="act"><button class="btn sm" onclick="app.supToggle(\''+t.id+'\')">'+(t.status==='Respondido'?'Reabrir':'Marcar respondido')+'</button><button class="btn sm danger" onclick="app.supDel(\''+t.id+'\')">Excluir</button></div></div>';
 }
@@ -821,15 +821,26 @@ function viewSuporte(){
     '<h2 class="sec">Abrir chamado</h2>'+
     '<div class="card">'+fld('Assunto','<input id="sp_assunto" placeholder="Ex.: Dúvida sobre o orçamento por categoria">')+
     fld('Mensagem','<textarea id="sp_msg" rows="3" placeholder="Descreva o que você precisa"></textarea>')+
-    fld('Enviar por','<select id="sp_canal"><option value="whatsapp">WhatsApp</option><option value="email">E-mail</option></select>')+
+    fld('Enviar por','<select id="sp_canal">'+(supApiOn()?'<option value="app">Pelo Fine Gestor (resposta por e-mail ou WhatsApp)</option>':'')+'<option value="whatsapp">WhatsApp</option><option value="email">E-mail</option></select>')+
     '<div class="err" id="sp_err"></div><button class="btn primary" onclick="app.supOpen()">Abrir chamado</button></div>'+
     '<h2 class="sec">Histórico de chamados</h2>';
   h+=db.tickets.length?'<div class="list">'+db.tickets.slice().sort(function(a,b){return a.data<b.data?1:-1;}).map(supRow).join('')+'</div>':'<div class="empty">Nenhum chamado aberto ainda.</div>';
   return h;
 }
+function supApiOn(){return cloudOn()&&!!cSession()&&/^https:\/\//.test(String(CLOUD.api||''));}
 function supOpen(){
   var assunto=$('#sp_assunto').value.trim(),msg=$('#sp_msg').value.trim(),canal=$('#sp_canal').value;
   if(!assunto||!msg){$('#sp_err').textContent='Preencha o assunto e a mensagem.';return;}
+  if(canal==='app'){
+    $('#sp_err').textContent='Enviando…';
+    cToken().then(function(tk){return fetch(String(CLOUD.api).replace(/\/+$/,'')+'/suporte',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+tk},body:JSON.stringify({assunto:assunto,mensagem:msg})});})
+    .then(function(r){return r.json().catch(function(){return {};}).then(function(j){return {ok:r.ok,status:r.status,j:j};});})
+    .then(function(x){
+      if(x.ok){db.tickets.push({id:String((x.j&&x.j.id)||uid()),assunto:assunto,mensagem:msg,canal:'app',data:todayISO(),status:'Aberto'});notify('cadastro','Chamado enviado',assunto);save();render();return;}
+      var e=$('#sp_err');if(e)e.textContent=x.status===429?'Você enviou muitos chamados em pouco tempo. Tente de novo mais tarde ou use o WhatsApp.':x.status===403?'Sua licença precisa estar ativa para abrir chamados por aqui. Use o WhatsApp ou o e-mail.':x.status===401?'Sua sessão expirou. Entre de novo ou use o WhatsApp.':'Não foi possível enviar agora. Use o WhatsApp ou o e-mail.';
+    }).catch(function(){var e=$('#sp_err');if(e)e.textContent='Sem conexão. Use o WhatsApp ou o e-mail.';});
+    return;
+  }
   var t={id:uid(),assunto:assunto,mensagem:msg,canal:canal,data:todayISO(),status:'Aberto'};
   db.tickets.push(t);notify('cadastro','Chamado aberto',assunto);save();
   window.open(canal==='whatsapp'?ticketWhats(t):ticketMailto(t),'_blank');
@@ -959,7 +970,7 @@ var TERMS_HTML=[
 '<p><b>6. Disponibilidade.</b> O programa é fornecido no estado em que se encontra, sem garantia de funcionamento ininterrupto. Funções podem ser alteradas ou acrescentadas ao longo do tempo.</p>',
 '<p><b>7. Contato.</b> Dúvidas e solicitações podem ser enviadas pela aba Suporte do próprio programa.</p>'].join('');
 var PRIV_HTML=[
-'<p><b>Quais dados são tratados.</b> (a) Dados da conta: e-mail e senha (armazenada de forma protegida). (b) Dados que você cadastra no programa: entradas, contas, cartões, bancos, poupanças e anotações. (c) Dados da compra: nome, e-mail e WhatsApp informados no pagamento, valor e forma de pagamento.</p>',
+'<p><b>Quais dados são tratados.</b> (a) Dados da conta: e-mail e senha (armazenada de forma protegida). (b) Dados que você cadastra no programa: entradas, contas, cartões, bancos, poupanças e anotações. (c) Dados da compra: nome, e-mail e WhatsApp informados no pagamento, valor e forma de pagamento. (d) Chamados de suporte abertos pelo programa: assunto, mensagem e e-mail da conta, que são apagados junto com a sua conta.</p>',
 '<p><b>Para que usamos.</b> Para criar e manter a sua conta, validar a sua licença, sincronizar os seus dados entre aparelhos, enviar a chave de ativação, prestar suporte e cumprir obrigações legais. Não vendemos seus dados e não os usamos para publicidade.</p>',
 '<p><b>Onde ficam.</b> Os dados da conta e do programa ficam em servidores de nuvem (Supabase), com acesso restrito a cada usuário, e uma cópia fica no seu aparelho. O pagamento é feito no Mercado Pago, e nós não armazenamos dados de cartão.</p>',
 '<p><b>Com quem compartilhamos.</b> Apenas com prestadores necessários ao serviço: hospedagem e banco de dados (Supabase), processamento do servidor da loja (Cloudflare), pagamento (Mercado Pago) e a ferramenta de mensagens usada pela equipe para ser avisada de novas compras. Se você ativar os alertas por Telegram (opcional), enviaremos ao seu Telegram um resumo dos seus vencimentos, com nomes e valores das contas; o Telegram trata esses dados conforme a política dele, e você pode desligar quando quiser. Podemos compartilhar dados quando a lei exigir.</p>',
@@ -1672,7 +1683,7 @@ function settingsModal(){
 /* ---------- conta, licença e nuvem (Supabase) ---------- */
 var CLOUD=window.FG_CONFIG||{url:'COLE_AQUI_A_URL_DO_PROJETO',key:'COLE_AQUI_A_CHAVE_PUBLICA'}; /* a configuração fica no arquivo config.js */
 function cloudOn(){return /^https:\/\//.test(CLOUD.url)&&CLOUD.key.indexOf('COLE')!==0;}
-var AUTH_K='fg-auth',LIC_K='fg-lic',SYNC_K='fg-sync',cloudApplying=false,pushTimer=null,chg=0,lastEmail='';
+var AUTH_K='fg-auth',LIC_K='fg-lic',SYNC_K='fg-sync',BASE_K='fg-base',cloudApplying=false,pushTimer=null,chg=0,lastEmail='';
 function lsGet(k){try{return JSON.parse(localStorage.getItem(k)||'null');}catch(e){return null;}}
 function lsSet(k,v){try{if(v===null)localStorage.removeItem(k);else localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
 function cReq(path,opt,tok){
@@ -1780,37 +1791,73 @@ function cloudDirty(){
   clearTimeout(pushTimer);pushTimer=setTimeout(function(){cPush();},2500);
   clearTimeout(agTimer);agTimer=setTimeout(cAgendaPush,6000);
 }
-function cConflict(row){
-  return new Promise(function(res){
-    gHide();
-    modal('Dados diferentes','<p>Há dados na sua conta (nuvem) e dados diferentes neste aparelho. Qual versão você quer manter?</p><p class="small muted">A outra versão será substituída.</p>',[
-      {label:'Manter os deste aparelho',fn:function(){var m=syncMeta();m.ver=row.version;m.dirty=true;lsSet(SYNC_K,m);cPush().then(res);}},
-      {label:'Usar os da nuvem',cls:'primary',fn:function(){applyCloud(row.data);var m=syncMeta();m.ver=row.version;m.dirty=false;m.at=Date.now();lsSet(SYNC_K,m);render();res();}}
-    ]);
+/* junção automática: se duas pessoas (ou dois aparelhos) mudaram os dados ao mesmo tempo, as alterações dos dois são somadas */
+function isObj(x){return !!x&&typeof x==='object'&&!Array.isArray(x);}
+function jeq(a,b){return JSON.stringify(a)===JSON.stringify(b);}
+function mergeScalar(b,l,r){if(jeq(l,r))return l;if(jeq(b,l))return r;return l;}   /* os dois mudaram: vale quem está enviando agora */
+function mergeArr(b,l,r){
+  var lr=l.concat(r);
+  if(!(lr.length&&lr.every(function(x){return isObj(x)&&x.id!=null;}))){
+    if(lr.some(isObj))return mergeScalar(b,l,r);
+    var ks=function(a){return a.map(function(x){return JSON.stringify(x);});},bs=ks(b),ls=ks(l),rs=ks(r),out=[],seen={};
+    ls.concat(rs).forEach(function(k){if(seen[k])return;seen[k]=1;var inB=bs.indexOf(k)>=0,inL=ls.indexOf(k)>=0,inR=rs.indexOf(k)>=0;if((inL&&inR)||!inB)out.push(JSON.parse(k));});
+    return out;
+  }
+  var idx=function(a){var m={};a.forEach(function(x){m[x.id]=x;});return m;},B=idx(b.filter(isObj)),Lm=idx(l),Rm=idx(r),ids=[],seen2={},res=[];
+  l.forEach(function(x){ids.push(x.id);});r.forEach(function(x){if(!(x.id in Lm))ids.push(x.id);});
+  ids.forEach(function(id){
+    if(seen2[id])return;seen2[id]=1;
+    var inB=id in B,inL=id in Lm,inR=id in Rm;
+    if(inL&&inR)res.push(mergeAny(B[id],Lm[id],Rm[id]));
+    else if(inL){if(!inB||!jeq(Lm[id],B[id]))res.push(Lm[id]);}        /* novo aqui, ou alterado aqui mesmo tendo sido apagado lá */
+    else if(inR){if(!inB||!jeq(Rm[id],B[id]))res.push(Rm[id]);}
   });
+  return res;
+}
+function mergeAny(b,l,r){
+  if(Array.isArray(l)&&Array.isArray(r))return mergeArr(Array.isArray(b)?b:[],l,r);
+  if(isObj(l)&&isObj(r)){
+    var o={},bb=isObj(b)?b:{};
+    Object.keys(l).concat(Object.keys(r)).forEach(function(k){
+      if(k in o)return;var inL=k in l,inR=k in r;
+      if(inL&&inR)o[k]=mergeAny(bb[k],l[k],r[k]);
+      else if(inL){if(!(k in bb)||!jeq(l[k],bb[k]))o[k]=l[k];}
+      else if(!(k in bb)||!jeq(r[k],bb[k]))o[k]=r[k];
+    });
+    return o;
+  }
+  return mergeScalar(b,l,r);
+}
+var mergeTries=0;
+function cMerge(row){
+  if(++mergeTries>4){mergeTries=0;return Promise.resolve();}
+  var merged=mergeAny(lsGet(BASE_K)||{},snapshot(),row.data||{});
+  applyCloud(merged);
+  var m=syncMeta();m.ver=row.version;m.dirty=true;lsSet(SYNC_K,m);
+  return cPush();
 }
 function cPull(){
   var s=cSession(),m=syncMeta();if(!s)return Promise.reject('nosession');
-  if(m.uid&&m.uid!==s.user.id){db=defaults();cloudApplying=true;save();cloudApplying=false;m={ver:null,dirty:false,at:0};}
+  if(m.uid&&m.uid!==s.user.id){db=defaults();cloudApplying=true;save();cloudApplying=false;m={ver:null,dirty:false,at:0};lsSet(BASE_K,null);}
   m.uid=s.user.id;lsSet(SYNC_K,m);
   return cToken().then(function(t){return cReq('/rest/v1/user_data?select=data,version&user_id=eq.'+s.user.id,{},t);}).then(function(r){
     if(!r.ok)return Promise.reject('net');
     var row=r.json&&r.json[0],m=syncMeta();
     if(!row){if(!dbEmpty(db)){m.ver=null;lsSet(SYNC_K,m);return cPush();}return;}
-    if(m.ver===row.version){if(m.dirty)return cPush();return;}
-    if(!m.dirty&&(m.ver!==null||dbEmpty(db))){applyCloud(row.data);m.ver=row.version;m.at=Date.now();lsSet(SYNC_K,m);return;}
-    return cConflict(row);
+    if(m.ver===row.version){if(!lsGet(BASE_K)&&!m.dirty)lsSet(BASE_K,row.data);if(m.dirty)return cPush();return;}
+    if(!m.dirty&&(m.ver!==null||dbEmpty(db))){applyCloud(row.data);lsSet(BASE_K,row.data);m.ver=row.version;m.at=Date.now();lsSet(SYNC_K,m);return;}
+    return cMerge(row);
   });
 }
 function cPush(){
   var s=cSession();if(!s||!cloudOn())return Promise.resolve();
-  var m=syncMeta(),c0=chg;
+  var m=syncMeta(),c0=chg,sent=null;
   return cToken().then(function(t){
-    var snap=snapshot();
+    var snap=snapshot();sent=snap;
     if(m.ver===null)return cReq('/rest/v1/user_data',{method:'POST',headers:{'Prefer':'return=representation,resolution=merge-duplicates'},body:JSON.stringify({user_id:s.user.id,data:snap})},t);
     return cReq('/rest/v1/user_data?user_id=eq.'+s.user.id+'&version=eq.'+m.ver,{method:'PATCH',headers:{'Prefer':'return=representation'},body:JSON.stringify({data:snap})},t);
   }).then(function(r){
-    if(r.ok&&r.json&&r.json[0]){var mm=syncMeta();mm.ver=r.json[0].version;mm.dirty=(chg!==c0);mm.at=Date.now();lsSet(SYNC_K,mm);if(mm.dirty){clearTimeout(pushTimer);pushTimer=setTimeout(cPush,1500);}return;}
+    if(r.ok&&r.json&&r.json[0]){lsSet(BASE_K,sent);mergeTries=0;var mm=syncMeta();mm.ver=r.json[0].version;mm.dirty=(chg!==c0);mm.at=Date.now();lsSet(SYNC_K,mm);if(mm.dirty){clearTimeout(pushTimer);pushTimer=setTimeout(cPush,1500);}return;}
     if(r.ok)return cPull();
   }).catch(function(){});
 }
@@ -1826,7 +1873,7 @@ function cDeleteAccount(){
   modal('Excluir minha conta','<div class="err" id="ferr"></div><p>Isto apaga <b>definitivamente</b> a sua conta e todos os seus dados, na nuvem e neste aparelho. Não dá para desfazer.</p><p class="small muted">Sua chave de ativação volta a ficar livre para você criar outra conta depois. Se quiser guardar seus dados, faça um backup em ⚙️ antes.</p>'+fld('Para confirmar, digite EXCLUIR','<input id="del_ok" autocomplete="off">'),[{label:'Cancelar'},{label:'Excluir minha conta',cls:'danger',fn:function(){
     if((($('#del_ok')||{}).value||'').trim().toUpperCase()!=='EXCLUIR')return showErr('Digite EXCLUIR para confirmar.');
     cToken().then(function(t){return cReq('/rest/v1/rpc/delete_my_account',{method:'POST',body:'{}'},t);}).then(function(r){
-      if(r.ok&&r.json==='ok'){try{localStorage.removeItem(KEY);[AUTH_K,LIC_K,SYNC_K].forEach(function(k){localStorage.removeItem(k);});}catch(e){}location.reload();}
+      if(r.ok&&r.json==='ok'){try{localStorage.removeItem(KEY);[AUTH_K,LIC_K,SYNC_K,BASE_K].forEach(function(k){localStorage.removeItem(k);});}catch(e){}location.reload();}
       else showErr(r.json==='admin'?'Uma conta de administrador não pode ser excluída por aqui.':'Não foi possível excluir agora. Tente novamente.');
     }).catch(function(){showErr('Sem conexão. Tente novamente.');});
     return false;
@@ -1884,7 +1931,7 @@ function alOff(){
   cToken().then(function(t){return cReq('/rest/v1/rpc/telegram_unlink',{method:'POST',body:'{}'},t);}).then(function(){lsSet('fg-alerts',null);alLoad();}).catch(function(){});
 }
 function cSignOut(){
-  function out(){try{localStorage.removeItem(KEY);[AUTH_K,LIC_K,SYNC_K].forEach(function(k){localStorage.removeItem(k);});}catch(e){}location.reload();}
+  function out(){try{localStorage.removeItem(KEY);[AUTH_K,LIC_K,SYNC_K,BASE_K].forEach(function(k){localStorage.removeItem(k);});}catch(e){}location.reload();}
   function ask(){confirmBox('Sair da conta','Os dados deste aparelho serão apagados. Eles continuam salvos na sua conta, na nuvem. Deseja sair?','Sair',out,true);}
   if(syncMeta().dirty){cPush().then(function(){
     if(syncMeta().dirty)confirmBox('Alterações não enviadas','Há alterações que ainda não foram enviadas para a nuvem e serão perdidas se você sair agora. Sair mesmo assim?','Sair mesmo assim',out,true);else ask();});}
