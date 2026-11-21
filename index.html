@@ -1446,7 +1446,7 @@ function renderActivation(err){
   gShow('<div class="gcard"><img src="'+LOGO_DATA+'" alt="Fine Gestor"><h2>Ativar o Fine Gestor</h2><p class="gsub">Informe a chave de ativação que você recebeu após a compra.</p>'+
     '<div class="fld"><input id="g_key" placeholder="'+(cloudOn()?'FG-XXXX-XXXX-XXXX':'PJM-XXXX-XXXX-XX')+'" style="text-transform:uppercase;letter-spacing:1px;text-align:center"></div>'+
     '<div class="gerr">'+(err||'')+'</div>'+
-    '<button class="btn primary" onclick="app.tryActivate()">Ativar</button>'+(cloudOn()&&cSession()?'<button class="glink" onclick="app.cSignOut()">Sair da conta ('+esc(cSession().user.email)+')</button>':'')+'</div>');
+    '<button class="btn primary" onclick="app.tryActivate()">Ativar</button>'+(cloudOn()&&cSession()?'<button class="glink" onclick="app.showJoin()">Tenho um código de convite da família</button>':'')+(cloudOn()&&cSession()?'<button class="glink" onclick="app.cSignOut()">Sair da conta ('+esc(cSession().user.email)+')</button>':'')+'</div>');
   var inp=$('#g_key');if(inp){inp.focus();inp.addEventListener('keydown',function(e){if(e.key==='Enter')app.tryActivate();});}
 }
 function renderSetPin(){
@@ -1630,6 +1630,7 @@ function settingsModal(){
     '<select id="s_modo" onchange="app.setModo(this.value)"><option value="pessoal"'+((s.modo||'pessoal')==='pessoal'?' selected':'')+'>Só pessoal</option><option value="mei"'+(s.modo==='mei'?' selected':'')+'>MEI</option><option value="autonomo"'+(s.modo==='autonomo'?' selected':'')+'>Autônomo</option></select>'+
     (s.modo==='mei'?fld('Limite anual de faturamento do MEI','<input id="s_lim" inputmode="decimal" value="'+fmtNum(Number(s.limiteMei)||81000)+'" onchange="app.setLimite(this.value)">','Padrão: R$ 81.000. No ano de abertura o limite é proporcional aos meses de atividade.'):'')+'</div>'+
     (cloudOn()&&cSession()?'<div class="setblock"><h4>☁️ Conta e nuvem</h4><p class="small muted" style="margin-top:0">Conta: <b>'+esc(cSession().user.email)+'</b><br>Sincronização: '+syncLabel()+'</p><div class="btnrow"><button class="btn" id="b_sync">Sincronizar agora</button><button class="btn" id="b_alert">🔔 Alertas por Telegram</button><button class="btn" id="b_out">Sair da conta</button><button class="btn danger" id="b_del">Excluir minha conta</button></div></div>':'')+
+    famBlock()+
     '<div class="setblock"><h4>🔑 Licença e acesso</h4><p class="small muted" style="margin-top:0">'+(cloudOn()?'Licença: <b>ativa</b>':'Chave ativada: <span class="mono">'+esc(s.licenseKey||'—')+'</span>')+'</p>'+
     fld('Senha de acesso','<input id="s_pin" type="password" placeholder="'+(s.pinHash?'Deixe em branco para manter a atual':'Nenhuma definida — opcional')+'">','Deixe em branco para não alterar. Para remover, digite REMOVER.')+'</div>'+
     '<div class="setblock"><h4>🔔 Alertas e aparência</h4><div class="setgrid">'+
@@ -1717,11 +1718,49 @@ function cErrMsg(r){
   if(m.indexOf('rate')>=0||r.status===429)return 'Muitas tentativas. Aguarde alguns minutos.';
   return 'Não foi possível concluir. Tente novamente.';
 }
+/* família: o dono e o convidado usam os mesmos dados (os do dono) */
+var FAM=null,FAM_K='fg-fam';
+function famGet(){var s=cSession(),f=FAM||lsGet(FAM_K);return (f&&s&&f.me===s.user.id)?f:null;}
+function dataUid(){var f=famGet();return (f&&f.role==='member'&&f.data_owner)||cSession().user.id;}
+function cFam(t){
+  return cReq('/rest/v1/rpc/family_info',{method:'POST',body:'{}'},t).then(function(r){
+    var s=cSession();
+    if(r.ok&&r.json&&r.json.role&&r.json.role!=='login'&&s){FAM=r.json;FAM.me=s.user.id;lsSet(FAM_K,FAM);}
+    return famGet();
+  }).catch(function(){return famGet();});
+}
+function cWipeLocal(){db=defaults();cloudApplying=true;save();cloudApplying=false;lsSet(SYNC_K,null);lsSet(BASE_K,null);}
 function cLicCheck(){
-  return cToken().then(function(t){return cReq('/rest/v1/licenses?select=status&status=eq.ativa&limit=1',{},t);}).then(function(r){
+  var tk;
+  return cToken().then(function(t){tk=t;return cReq('/rest/v1/licenses?select=status&status=eq.ativa&limit=1',{},t);}).then(function(r){
     if(!r.ok)return Promise.reject('net');
-    var ok=!!(r.json&&r.json.length);lsSet(LIC_K,ok?{uid:cSession().user.id,at:Date.now()}:null);return ok;
+    var own=!!(r.json&&r.json.length);
+    return cFam(tk).then(function(f){
+      var ok=own||!!(f&&f.role==='member'&&f.licensed);
+      if(!ok){var m=syncMeta();if(m.uid&&m.uid!==cSession().user.id)cWipeLocal();}
+      lsSet(LIC_K,ok?{uid:cSession().user.id,at:Date.now()}:null);return ok;
+    });
   });
+}
+function famBlock(){
+  var f=famGet();if(!f||(f.role!=='owner'&&f.role!=='member'))return '';
+  var h='<div class="setblock"><h4>👨‍👩‍👧 Família</h4>';
+  if(f.role==='member'){
+    h+='<p class="small muted" style="margin-top:0">Você usa os dados de <b>'+esc(f.owner_email||'o dono da licença')+'</b>. Todos veem e editam os mesmos dados.</p><div class="btnrow"><button class="btn danger" onclick="app.famLeave()">Sair da família</button></div>';
+  }else{
+    var ms=f.members||[],max=f.max||2;
+    h+='<p class="small muted" style="margin-top:0">Você é o dono. Pessoas na família: <b>'+(ms.length+1)+' de '+max+'</b>. Todos veem e editam os mesmos dados; só você convida e remove.</p>';
+    ms.forEach(function(m,i){h+='<div class="btnrow"><span class="small" style="flex:1;align-self:center">'+esc(m.email||'')+'</span><button class="btn danger" onclick="app.famRemove('+i+')">Remover</button></div>';});
+    h+=ms.length+1<max?'<div class="btnrow"><button class="btn" onclick="app.famInvite()">Gerar código de convite</button><button class="btn" onclick="app.famRefresh()">Atualizar</button></div><div id="fam_code" class="small" style="margin-top:8px"></div>':'<p class="small muted">A família está completa.</p><div class="btnrow"><button class="btn" onclick="app.famRefresh()">Atualizar</button></div>';
+  }
+  return h+'</div>';
+}
+function renderJoin(err){
+  gShow('<div class="gcard"><img src="'+LOGO_DATA+'" alt="Fine Gestor"><h2>Entrar na família</h2><p class="gsub">Digite o código de convite que o dono da licença gerou para você.</p>'+
+    '<div class="fld"><input id="g_code" placeholder="CÓDIGO" style="text-transform:uppercase;letter-spacing:2px;text-align:center"></div>'+
+    '<div class="gerr">'+(err||'')+'</div>'+
+    '<button class="btn primary" onclick="app.tryJoin()">Entrar</button><button class="glink" onclick="app.showActivation()">Voltar</button></div>');
+  var inp=$('#g_code');if(inp){inp.focus();inp.addEventListener('keydown',function(e){if(e.key==='Enter')app.tryJoin();});}
 }
 function cActivate(k){
   return cToken().then(function(t){return cReq('/rest/v1/rpc/activate_license',{method:'POST',body:JSON.stringify({p_key:k})},t);}).then(function(r){return r.ok?r.json:'erro';});
@@ -1838,9 +1877,10 @@ function cMerge(row){
 }
 function cPull(){
   var s=cSession(),m=syncMeta();if(!s)return Promise.reject('nosession');
-  if(m.uid&&m.uid!==s.user.id){db=defaults();cloudApplying=true;save();cloudApplying=false;m={ver:null,dirty:false,at:0};lsSet(BASE_K,null);}
-  m.uid=s.user.id;lsSet(SYNC_K,m);
-  return cToken().then(function(t){return cReq('/rest/v1/user_data?select=data,version&user_id=eq.'+s.user.id,{},t);}).then(function(r){
+  var du=dataUid();
+  if(m.uid&&m.uid!==du){db=defaults();cloudApplying=true;save();cloudApplying=false;m={ver:null,dirty:false,at:0};lsSet(BASE_K,null);}
+  m.uid=du;lsSet(SYNC_K,m);
+  return cToken().then(function(t){return cReq('/rest/v1/user_data?select=data,version&user_id=eq.'+du,{},t);}).then(function(r){
     if(!r.ok)return Promise.reject('net');
     var row=r.json&&r.json[0],m=syncMeta();
     if(!row){if(!dbEmpty(db)){m.ver=null;lsSet(SYNC_K,m);return cPush();}return;}
@@ -1854,8 +1894,8 @@ function cPush(){
   var m=syncMeta(),c0=chg,sent=null;
   return cToken().then(function(t){
     var snap=snapshot();sent=snap;
-    if(m.ver===null)return cReq('/rest/v1/user_data',{method:'POST',headers:{'Prefer':'return=representation,resolution=merge-duplicates'},body:JSON.stringify({user_id:s.user.id,data:snap})},t);
-    return cReq('/rest/v1/user_data?user_id=eq.'+s.user.id+'&version=eq.'+m.ver,{method:'PATCH',headers:{'Prefer':'return=representation'},body:JSON.stringify({data:snap})},t);
+    if(m.ver===null)return cReq('/rest/v1/user_data',{method:'POST',headers:{'Prefer':'return=representation,resolution=merge-duplicates'},body:JSON.stringify({user_id:dataUid(),data:snap})},t);
+    return cReq('/rest/v1/user_data?user_id=eq.'+dataUid()+'&version=eq.'+m.ver,{method:'PATCH',headers:{'Prefer':'return=representation'},body:JSON.stringify({data:snap})},t);
   }).then(function(r){
     if(r.ok&&r.json&&r.json[0]){lsSet(BASE_K,sent);mergeTries=0;var mm=syncMeta();mm.ver=r.json[0].version;mm.dirty=(chg!==c0);mm.at=Date.now();lsSet(SYNC_K,mm);if(mm.dirty){clearTimeout(pushTimer);pushTimer=setTimeout(cPush,1500);}return;}
     if(r.ok)return cPull();
@@ -1870,10 +1910,10 @@ function cSyncNow(btn){
   cPush().then(cPull).then(function(){btn.textContent='Pronto ✓';render();}).catch(function(){btn.textContent='Sem conexão';});
 }
 function cDeleteAccount(){
-  modal('Excluir minha conta','<div class="err" id="ferr"></div><p>Isto apaga <b>definitivamente</b> a sua conta e todos os seus dados, na nuvem e neste aparelho. Não dá para desfazer.</p><p class="small muted">Sua chave de ativação volta a ficar livre para você criar outra conta depois. Se quiser guardar seus dados, faça um backup em ⚙️ antes.</p>'+fld('Para confirmar, digite EXCLUIR','<input id="del_ok" autocomplete="off">'),[{label:'Cancelar'},{label:'Excluir minha conta',cls:'danger',fn:function(){
+  modal('Excluir minha conta','<div class="err" id="ferr"></div><p>Isto apaga <b>definitivamente</b> a sua conta e todos os seus dados, na nuvem e neste aparelho. Não dá para desfazer.</p>'+(famGet()&&famGet().role==='owner'&&(famGet().members||[]).length?'<p><b>Atenção:</b> a pessoa da sua família também perde o acesso e os dados compartilhados.</p>':'')+'<p class="small muted">Sua chave de ativação volta a ficar livre para você criar outra conta depois. Se quiser guardar seus dados, faça um backup em ⚙️ antes.</p>'+fld('Para confirmar, digite EXCLUIR','<input id="del_ok" autocomplete="off">'),[{label:'Cancelar'},{label:'Excluir minha conta',cls:'danger',fn:function(){
     if((($('#del_ok')||{}).value||'').trim().toUpperCase()!=='EXCLUIR')return showErr('Digite EXCLUIR para confirmar.');
     cToken().then(function(t){return cReq('/rest/v1/rpc/delete_my_account',{method:'POST',body:'{}'},t);}).then(function(r){
-      if(r.ok&&r.json==='ok'){try{localStorage.removeItem(KEY);[AUTH_K,LIC_K,SYNC_K,BASE_K].forEach(function(k){localStorage.removeItem(k);});}catch(e){}location.reload();}
+      if(r.ok&&r.json==='ok'){try{localStorage.removeItem(KEY);[AUTH_K,LIC_K,SYNC_K,BASE_K,FAM_K].forEach(function(k){localStorage.removeItem(k);});}catch(e){}location.reload();}
       else showErr(r.json==='admin'?'Uma conta de administrador não pode ser excluída por aqui.':'Não foi possível excluir agora. Tente novamente.');
     }).catch(function(){showErr('Sem conexão. Tente novamente.');});
     return false;
@@ -1931,7 +1971,7 @@ function alOff(){
   cToken().then(function(t){return cReq('/rest/v1/rpc/telegram_unlink',{method:'POST',body:'{}'},t);}).then(function(){lsSet('fg-alerts',null);alLoad();}).catch(function(){});
 }
 function cSignOut(){
-  function out(){try{localStorage.removeItem(KEY);[AUTH_K,LIC_K,SYNC_K,BASE_K].forEach(function(k){localStorage.removeItem(k);});}catch(e){}location.reload();}
+  function out(){try{localStorage.removeItem(KEY);[AUTH_K,LIC_K,SYNC_K,BASE_K,FAM_K].forEach(function(k){localStorage.removeItem(k);});}catch(e){}location.reload();}
   function ask(){confirmBox('Sair da conta','Os dados deste aparelho serão apagados. Eles continuam salvos na sua conta, na nuvem. Deseja sair?','Sair',out,true);}
   if(syncMeta().dirty){cPush().then(function(){
     if(syncMeta().dirty)confirmBox('Alterações não enviadas','Há alterações que ainda não foram enviadas para a nuvem e serão perdidas se você sair agora. Sair mesmo assim?','Sair mesmo assim',out,true);else ask();});}
@@ -2128,6 +2168,37 @@ window.app={
   cSetPw:function(){
     var pw=$('#c_pw').value||'';if(pw.length<6)return renderNewPw('A senha precisa ter pelo menos 6 caracteres.');
     cToken().then(function(t){return cReq('/auth/v1/user',{method:'PUT',body:JSON.stringify({password:pw})},t);}).then(function(r){if(r.ok)cloudBoot();else renderNewPw(cErrMsg(r));}).catch(function(){renderNewPw('Sem conexão.');});
+  },
+  showJoin:function(){renderJoin();},
+  showActivation:function(){renderActivation();},
+  tryJoin:function(){
+    var k=(($('#g_code')||{}).value||'').trim();if(!k)return renderJoin('Digite o código de convite.');
+    var msg={invalido:'Código inválido ou vencido. Peça um novo ao dono.',cheia:'A família já está completa.',tem_licenca:'Esta conta já tem licença própria e não pode entrar em uma família.',proprio:'Este código foi gerado pela sua própria conta.',login:'Sua sessão expirou. Entre de novo.'};
+    cToken().then(function(t){return cReq('/rest/v1/rpc/family_join',{method:'POST',body:JSON.stringify({p_code:k})},t);}).then(function(r){
+      var res=r.ok?r.json:'erro';
+      if(res==='ok'||res==='ja_membro')return cLicCheck().then(function(ok){if(ok)cEnter();else renderJoin('Não foi possível entrar agora. Tente de novo.');});
+      renderJoin(msg[res]||'Não foi possível entrar agora. Tente novamente.');
+    }).catch(function(){renderJoin('Sem conexão. Tente de novo.');});
+  },
+  famRefresh:function(){cToken().then(cFam).then(function(){closeModal();settingsModal();}).catch(function(){});},
+  famInvite:function(){
+    var msg={cheia:'A família já está completa.',sem_licenca:'Só quem tem licença ativa pode convidar.',login:'Sua sessão expirou. Entre de novo.'};
+    cToken().then(function(t){return cReq('/rest/v1/rpc/family_invite_code',{method:'POST',body:'{}'},t);}).then(function(r){
+      var c=r.ok?r.json:'erro',el=$('#fam_code');if(!el)return;
+      if(/^[A-F0-9]{10}$/.test(String(c)))el.innerHTML='Código de convite: <b class="mono" style="font-size:18px;letter-spacing:2px">'+c+'</b><br>Vale por 48 horas e serve para uma pessoa. Ela cria a conta, toca em “Tenho um código de convite da família” e digita este código.';
+      else el.textContent=msg[c]||'Não foi possível gerar agora. Tente de novo.';
+    }).catch(function(){var el=$('#fam_code');if(el)el.textContent='Sem conexão. Tente de novo.';});
+  },
+  famRemove:function(i){
+    var m=((famGet()||{}).members||[])[i];if(!m)return;
+    confirmBox('Remover da família','Remover '+esc(m.email||'esta pessoa')+'? Ela perde o acesso aos dados, e a cópia guardada no aparelho dela é apagada na próxima vez que abrir o programa.','Remover',function(){
+      cToken().then(function(t){return cReq('/rest/v1/rpc/family_remove',{method:'POST',body:JSON.stringify({p_member:m.id})},t).then(function(r){if(!r.ok)throw 0;return cFam(t);});}).then(function(){closeModal();settingsModal();toast('Pessoa removida da família.');}).catch(function(){toast('Não foi possível remover agora.','alerta');});
+    },true);
+  },
+  famLeave:function(){
+    confirmBox('Sair da família','Você perde o acesso aos dados da família e a cópia deste aparelho é apagada. Para voltar, o dono precisa gerar um novo código.','Sair',function(){
+      cToken().then(function(t){return cReq('/rest/v1/rpc/family_leave',{method:'POST',body:'{}'},t);}).then(function(r){if(!r.ok)throw 0;lsSet(FAM_K,null);location.reload();}).catch(function(){toast('Não foi possível sair agora.','alerta');});
+    },true);
   },
   cSignOut:cSignOut,
   tryActivate:function(){
