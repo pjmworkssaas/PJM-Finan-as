@@ -205,7 +205,8 @@ function detail(i){
     if(r.l.status==='disponivel')btn.push('<button class="btn s d" data-a="desativar" data-v="'+i+'">Cancelar licença</button>');
     if(r.o&&r.st!=='cancelado'&&r.st!=='aguardando_pgto')btn.push('<button class="btn s d" data-a="reembolso" data-v="'+i+'">Marcar reembolso</button>');
   }
-  var kv=[['Situação','<span class="st '+r.st+'">'+STAT[r.st]+'</span>'],['Cliente',esc(r.nome)],['E-mail',esc(r.email)],['WhatsApp',esc(r.whats||'—')],['Valor',r.valor==null?'—':brl(r.valor)],['Forma',esc(r.forma)],['Compra',fdate(r.data)],['Pedido',esc(r.o?r.o.id:'—')],['Chave',esc(r.l?r.l.chave:'—')],['Conta que ativou',esc(r.conta)],['Ativada em',fdate(r.l&&r.l.activated_at)],['Obs.',esc(r.l&&r.l.obs||'—')]];
+  if(r.l)btn.push('<button class="btn s" data-a="pessoas" data-v="'+i+'">Alterar nº de pessoas</button>');
+  var kv=[['Situação','<span class="st '+r.st+'">'+STAT[r.st]+'</span>'],['Cliente',esc(r.nome)],['E-mail',esc(r.email)],['WhatsApp',esc(r.whats||'—')],['Valor',r.valor==null?'—':brl(r.valor)],['Forma',esc(r.forma)],['Compra',fdate(r.data)],['Pedido',esc(r.o?r.o.id:'—')],['Chave',esc(r.l?r.l.chave:'—')],['Pessoas na licença',esc(r.l?String(r.l.max_membros||2):'—')],['Conta que ativou',esc(r.conta)],['Ativada em',fdate(r.l&&r.l.activated_at)],['Obs.',esc(r.l&&r.l.obs||'—')]];
   modal('<h2>'+esc(r.nome)+'</h2>'+kv.map(function(x){return '<div class="item rowf" style="justify-content:space-between"><span class="mut sm">'+x[0]+'</span><span>'+x[1]+'</span></div>';}).join('')+
    '<div class="rowf" style="margin:12px 0">'+btn.join('')+'</div><h3>Histórico</h3><div class="tl">'+(ev.length?ev.map(function(e){return '<div><i>'+fdate(e.at)+'</i>'+esc(evName(e.kind))+' <span class="mut">'+esc(e.detail||'')+'</span></div>';}).join(''):'<div class="mut">Sem eventos registrados.</div>')+'</div>'+
    '<div class="rowf" style="margin-top:14px;justify-content:flex-end"><button class="btn" data-a="close">Fechar</button></div>');
@@ -222,7 +223,7 @@ function noteForm(n,date){
   if(n)document.getElementById('nt').value=n.tipo;
 }
 function manualForm(){
-  modal('<h2>Nova licença manual</h2><p class="mut sm">Para presente, suporte ou cliente que pagou fora do site. A chave é criada na hora.</p><label>Nome</label><input id="mn"><div class="row2"><div><label>E-mail</label><input id="me" type="email"></div><div><label>WhatsApp (com 55 e DDD)</label><input id="mw" inputmode="tel"></div></div><label>Observação</label><input id="mo"><div class="err" id="ne"></div>'+
+  modal('<h2>Nova licença manual</h2><p class="mut sm">Para presente, suporte ou cliente que pagou fora do site. A chave é criada na hora.</p><label>Nome</label><input id="mn"><div class="row2"><div><label>E-mail</label><input id="me" type="email"></div><div><label>WhatsApp (com 55 e DDD)</label><input id="mw" inputmode="tel"></div></div><label>Pessoas na licença (dono incluso, 1 a 20)</label><input id="mp" type="number" min="1" max="20" value="2"><label>Observação</label><input id="mo"><div class="err" id="ne"></div>'+
    '<div class="rowf" style="justify-content:flex-end;margin-top:10px"><button class="btn" data-a="close">Cancelar</button><button class="btn p" data-a="savemanual">Criar licença</button></div>');
 }
 var AL='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -256,10 +257,13 @@ var A={
     patch('licenses',r.l.id,{status:'disponivel',user_id:null,activated_at:null}).then(function(){return logEv(r.o&&r.o.id,'liberada','era da conta '+r.conta,r.l.id);}).then(function(){return done('Chave liberada');}).catch(erro);},
   reembolso:function(v){var r=ROWS[v];if(!confirm('Marcar como reembolsado e desativar a licença? (O dinheiro é devolvido pelo Mercado Pago.)'))return;
     patch('orders',r.o.id,{status:'reembolsado'}).then(function(){return r.l?patch('licenses',r.l.id,{status:'cancelada'}):0;}).then(function(){return logEv(r.o.id,'reembolsado',brl(r.o.valor),r.l&&r.l.id);}).then(function(){return done('Reembolso registrado');}).catch(erro);},
+  pessoas:function(v){var r=ROWS[v];if(!r||!r.l)return;var n=parseInt(prompt('Quantas pessoas (dono incluso) esta licença pode ter? De 1 a 20.',r.l.max_membros||2),10);
+    if(isNaN(n))return;if(n<1||n>20){alert('Digite um número de 1 a 20.');return;}
+    patch('licenses',r.l.id,{max_membros:n}).then(function(){return done('Limite atualizado para '+n+' pessoa'+(n>1?'s':''));}).catch(erro);},
   manual:function(){manualForm();},
-  savemanual:function(){var k=newKey(),n=document.getElementById('mn').value.trim(),e=document.getElementById('me').value.trim(),w=document.getElementById('mw').value.replace(/\D/g,''),o=document.getElementById('mo').value.trim();
+  savemanual:function(){var k=newKey(),n=document.getElementById('mn').value.trim(),e=document.getElementById('me').value.trim(),w=document.getElementById('mw').value.replace(/\D/g,''),o=document.getElementById('mo').value.trim(),mp=Math.max(1,Math.min(20,parseInt(document.getElementById('mp').value,10)||2));
     if(!n){document.getElementById('ne').textContent='Informe o nome.';return;}
-    api('/rest/v1/licenses',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({chave:k,email:e||null,nome:n,obs:(o?o+' · ':'')+'manual'+(w?' · WhatsApp '+w:'')})}).then(function(r){
+    api('/rest/v1/licenses',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({chave:k,email:e||null,nome:n,max_membros:mp,obs:(o?o+' · ':'')+'manual'+(w?' · WhatsApp '+w:'')})}).then(function(r){
       if(!r.ok)throw new Error('HTTP '+r.status);var l=r.json[0];return logEv(null,'licenca_manual',n+' · '+k,l.id).then(function(){return load();}).then(function(){render();
         var row={nome:n,whats:w,l:{chave:k}};modal('<h2>Licença criada ✅</h2><p class="mut sm">'+esc(n)+'</p><div class="c" style="font:700 20px ui-monospace,monospace;text-align:center;letter-spacing:1px">'+k+'</div><div class="rowf" style="justify-content:center"><button class="btn p" data-a="copy" data-v="'+k+'">Copiar chave</button>'+(waLink(row)?'<a class="btn" style="text-decoration:none" target="_blank" rel="noopener" href="'+waLink(row)+'">📲 WhatsApp</a>':'')+'<button class="btn" data-a="close">Fechar</button></div>');});}).catch(erro);},
   newnote:function(v){closeM();noteForm(null,v);},

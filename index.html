@@ -1732,7 +1732,7 @@ function cFam(t){
 function cWipeLocal(){db=defaults();cloudApplying=true;save();cloudApplying=false;lsSet(SYNC_K,null);lsSet(BASE_K,null);}
 function cLicCheck(){
   var tk;
-  return cToken().then(function(t){tk=t;return cReq('/rest/v1/licenses?select=status&status=eq.ativa&limit=1',{},t);}).then(function(r){
+  return cToken().then(function(t){tk=t;return cReq('/rest/v1/licenses?select=status&status=eq.ativa&user_id=eq.'+cSession().user.id+'&limit=1',{},t);}).then(function(r){
     if(!r.ok)return Promise.reject('net');
     var own=!!(r.json&&r.json.length);
     return cFam(tk).then(function(f){
