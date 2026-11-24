@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2456d6">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Fine Gestor">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -1626,6 +1627,7 @@ function loadSample(){
 function settingsModal(){
   var s=db.settings;var canN='Notification' in window;
   var body='<div class="err" id="ferr"></div>'+
+    instBlock()+
     '<div class="setblock"><h4>💼 Perfil de uso</h4><p class="small muted" style="margin-top:0">Com MEI ou Autônomo você separa o que é pessoal do que é do negócio e ganha o relatório para o contador.</p>'+
     '<select id="s_modo" onchange="app.setModo(this.value)"><option value="pessoal"'+((s.modo||'pessoal')==='pessoal'?' selected':'')+'>Só pessoal</option><option value="mei"'+(s.modo==='mei'?' selected':'')+'>MEI</option><option value="autonomo"'+(s.modo==='autonomo'?' selected':'')+'>Autônomo</option></select>'+
     (s.modo==='mei'?fld('Limite anual de faturamento do MEI','<input id="s_lim" inputmode="decimal" value="'+fmtNum(Number(s.limiteMei)||81000)+'" onchange="app.setLimite(this.value)">','Padrão: R$ 81.000. No ano de abertura o limite é proporcional aos meses de atividade.'):'')+'</div>'+
@@ -2169,6 +2171,7 @@ window.app={
     var pw=$('#c_pw').value||'';if(pw.length<6)return renderNewPw('A senha precisa ter pelo menos 6 caracteres.');
     cToken().then(function(t){return cReq('/auth/v1/user',{method:'PUT',body:JSON.stringify({password:pw})},t);}).then(function(r){if(r.ok)cloudBoot();else renderNewPw(cErrMsg(r));}).catch(function(){renderNewPw('Sem conexão.');});
   },
+  instalar:function(){if(!instEv)return;var e=instEv;instEv=null;e.prompt();if(e.userChoice)e.userChoice.then(function(c){if(c&&c.outcome==='accepted')toast('Instalando… procure o ícone do Fine Gestor na tela inicial.');closeModal();settingsModal();});},
   showJoin:function(){renderJoin();},
   showActivation:function(){renderActivation();},
   tryJoin:function(){
@@ -2263,6 +2266,20 @@ window.app={
 
 /* ---------- inicialização ---------- */
 load();applyTheme();boot();
+/* instalar como aplicativo (PWA) */
+var instEv=null;
+window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();instEv=e;});
+window.addEventListener('appinstalled',function(){instEv=null;});
+function isStandalone(){return (window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;}
+function instBlock(){
+  if(isStandalone())return '';
+  var ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  var h='<div class="setblock"><h4>📲 Instalar no celular</h4><p class="small muted" style="margin-top:0">Instale o Fine Gestor como aplicativo: ele ganha um ícone na tela inicial, abre sem a barra do navegador e funciona sem internet.</p>';
+  if(instEv)h+='<div class="btnrow"><button class="btn primary" onclick="app.instalar()">Instalar o aplicativo</button></div>';
+  else if(ios)h+='<p class="small">No iPhone: toque em <b>Compartilhar</b> (o quadrado com a seta) e depois em <b>Adicionar à Tela de Início</b>.</p>';
+  else h+='<p class="small">No Chrome do Android: toque no menu <b>⋮</b> e depois em <b>Instalar app</b> (ou <b>Adicionar à tela inicial</b>).</p>';
+  return h+'</div>';
+}
 if('serviceWorker' in navigator&&/^https?:/.test(location.protocol)){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}
 setInterval(function(){if(!$('#gate').classList.contains('hidden'))return;if(todayISO()!==lastDay){lastDay=todayISO();dailyAlert();render();}},60000);
 document.addEventListener('visibilitychange',function(){if(!$('#gate').classList.contains('hidden'))return;if(!document.hidden&&todayISO()!==lastDay){lastDay=todayISO();dailyAlert();render();}});
